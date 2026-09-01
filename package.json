@@ -1,0 +1,32 @@
+{
+  "name": "telegram-voice-gemini-bot",
+  "version": "1.0.0",
+  "description": "Telegram Voice Tracker with Google Gemini AI for Khmer audio transcription and IT issue classification",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "keywords": [
+    "telegram",
+    "telegraf",
+    "gemini",
+    "google-ai",
+    "speech-to-text",
+    "khmer",
+    "it-support"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "axios": "^1.7.9",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "telegraf": "^4.16.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
