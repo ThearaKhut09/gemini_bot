@@ -128,6 +128,47 @@ function fileToGenerativePart(filePath, mimeType) {
   };
 }
 
+// Fallback models in priority order
+const FALLBACK_MODELS = [
+  'gemini-3.6-flash',
+  'gemini-flash-latest',
+  'gemini-3.7-flash',
+  'gemini-2.5-flash-lite'
+];
+
+/**
+ * Executes Gemini generateContent with auto-retry and multi-model fallback
+ */
+async function generateWithFallback(generativeParts) {
+  let lastError = null;
+
+  for (const modelName of FALLBACK_MODELS) {
+    const model = genAI.getGenerativeModel({ model: modelName });
+
+    // Try up to 2 attempts per model (for temporary 503 spikes)
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        console.log(`🤖 Requesting AI analysis with [${modelName}] (attempt ${attempt})...`);
+        const result = await model.generateContent(generativeParts);
+        return result.response.text();
+      } catch (err) {
+        lastError = err;
+        const is503OrBusy = err.message?.includes('503') || err.message?.includes('high demand') || err.status === 503;
+
+        if (is503OrBusy) {
+          console.warn(`⚠️ Model [${modelName}] busy/503 (attempt ${attempt}). Waiting 1.5s...`);
+          await new Promise(r => setTimeout(r, 1500));
+        } else {
+          // If not 503, immediately try the next fallback model
+          break;
+        }
+      }
+    }
+  }
+
+  throw lastError || new Error('All Gemini model fallbacks exhausted.');
+}
+
 /**
  * Sends messages to IT Group with automatic supergroup migration support
  */
@@ -281,9 +322,8 @@ Return ONLY a valid JSON object matching this schema without markdown code block
 
     generativeParts.push(prompt);
 
-    // 4. Send combined bundle to Gemini
-    const result = await geminiModel.generateContent(generativeParts);
-    const responseText = result.response.text();
+    // 4. Send combined bundle to Gemini with auto-retry and multi-model fallback
+    const responseText = await generateWithFallback(generativeParts);
 
     let parsed = {
       language: 'Khmer',
