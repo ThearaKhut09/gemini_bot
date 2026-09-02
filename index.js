@@ -68,10 +68,10 @@ const server = app.listen(PORT, () => {
 // 4. Utility Functions & Storage
 // ==========================================
 
-// In-memory buffer for grouping user messages (15-second window)
+// In-memory buffer for grouping user messages (5-second window for fast delivery)
 // Key: `${chatId}_${userId}`
 const reportSessions = new Map();
-const BUFFER_WINDOW_MS = 15000; // 15 seconds
+const BUFFER_WINDOW_MS = 5000; // 5 seconds (fast response)
 
 function formatUserInfo(user) {
   const nameParts = [user.first_name, user.last_name].filter(Boolean);
@@ -128,13 +128,24 @@ function fileToGenerativePart(filePath, mimeType) {
   };
 }
 
-// Fallback models in priority order
+// Ultra-fast Lite & Flash models in priority order
 const FALLBACK_MODELS = [
+  'gemini-2.5-flash-lite',
+  'gemini-3.5-flash-lite',
+  'gemini-3.5-flash',
   'gemini-3.6-flash',
-  'gemini-flash-latest',
-  'gemini-3.7-flash',
-  'gemini-2.5-flash-lite'
+  'gemini-flash-latest'
 ];
+
+/**
+ * Helper to race a promise with a timeout (prevents long hanging requests)
+ */
+function withTimeout(promise, timeoutMs = 8000) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('AI request timed out')), timeoutMs))
+  ]);
+}
 
 /**
  * Executes Gemini generateContent with auto-retry and multi-model fallback
@@ -145,21 +156,20 @@ async function generateWithFallback(generativeParts) {
   for (const modelName of FALLBACK_MODELS) {
     const model = genAI.getGenerativeModel({ model: modelName });
 
-    // Try up to 2 attempts per model (for temporary 503 spikes)
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
-        console.log(`🤖 Requesting AI analysis with [${modelName}] (attempt ${attempt})...`);
-        const result = await model.generateContent(generativeParts);
+        console.log(`⚡ Requesting AI analysis with [${modelName}] (attempt ${attempt})...`);
+        const result = await withTimeout(model.generateContent(generativeParts), 8000);
+        console.log(`✅ AI responded successfully using [${modelName}]`);
         return result.response.text();
       } catch (err) {
         lastError = err;
-        const is503OrBusy = err.message?.includes('503') || err.message?.includes('high demand') || err.status === 503;
+        const is503OrBusy = err.message?.includes('503') || err.message?.includes('high demand') || err.message?.includes('timed out') || err.status === 503;
 
         if (is503OrBusy) {
-          console.warn(`⚠️ Model [${modelName}] busy/503 (attempt ${attempt}). Waiting 1.5s...`);
-          await new Promise(r => setTimeout(r, 1500));
+          console.warn(`⚠️ Model [${modelName}] slow/busy (attempt ${attempt}). Trying next...`);
+          if (attempt === 1) await new Promise(r => setTimeout(r, 800));
         } else {
-          // If not 503, immediately try the next fallback model
           break;
         }
       }
