@@ -159,6 +159,75 @@ bot.start((ctx) => {
   ctx.reply('👋 Hello! I am the Voice Report Tracker Bot.\n\nSend or forward voice messages in this group to transcribe Khmer speech and alert IT Support.');
 });
 
+bot.command('help', (ctx) => {
+  const helpText = `🛠️ <b>IT Support Help & Guide</b>\n` +
+    `━━━━━━━━━━━━━━━━━━━━━\n` +
+    `📌 <b>របៀបរាយការណ៍បញ្ហា (How to Report):</b>\n\n` +
+    `🎙️ <b>ផ្ញើសារសំឡេង (Voice Note):</b>\n` +
+    `• ចុច icon មេក្រូហ្វូន 🎙️ រួចនិយាយរៀបរាប់ពីបញ្ហាជាភាសាខ្មែរ ឬអង់គ្លេស។\n` +
+    `• Bot នឹងបំប្លែងសំឡេងជាអក្សរ និងបញ្ជូនទៅក្រុម IT ដោយស្វ័យប្រវត្តិ។\n\n` +
+    `💬 <b>ផ្ញើសារអក្សរ (Text Message):</b>\n` +
+    `• សរសេរសាររៀបរាប់ពីបញ្ហាធម្មតានៅក្នុង Group នេះ។\n\n` +
+    `⚡ <b>បញ្ជី Commands ផ្សេងៗ:</b>\n` +
+    `• /report - ការណែនាំរបៀបរាយការណ៍\n` +
+    `• /urgent - រាយការណ៍បញ្ហាបន្ទាន់\n` +
+    `• /contact - ព័ត៌មានទំនាក់ទំនងផ្នែក IT\n` +
+    `• /status - ស្ថានភាពប្រព័ន្ធ Bot\n` +
+    `• /getid - បង្ហាញ Chat ID នៃ Group`;
+
+  ctx.reply(helpText, { parse_mode: 'HTML' });
+});
+
+bot.command('report', (ctx) => {
+  const reportGuide = `📝 <b>របៀបស្នើសុំជំនួយបច្ចេកទេស (IT Ticket Guide)</b>\n` +
+    `━━━━━━━━━━━━━━━━━━━━━\n` +
+    `ដើម្បីឱ្យក្រុមការងារ IT ជួយដោះស្រាយបានលឿន សូមបញ្ជាក់ព័ត៌មានដូចខាងក្រោម៖\n\n` +
+    `1️⃣ <b>ឧបករណ៍ (Device):</b> កុំព្យូទ័រ / Printer / Internet / Network\n` +
+    `2️⃣ <b>បញ្ហាជួបប្រទះ (Issue):</b> បើកមិនចេញ / គាំង / អត់ដើរ...\n` +
+    `3️⃣ <b>ទីតាំង (Location):</b> បន្ទប់ / ជាន់ / ផ្នែក\n\n` +
+    `👉 <i>អ្នកអាចនិយាយជាសំឡេង 🎙️ ឬវាយជាអក្សរ 💬 ក្នុង Group នេះបានភ្លាមៗ!</i>`;
+
+  ctx.reply(reportGuide, { parse_mode: 'HTML' });
+});
+
+bot.command('urgent', (ctx) => {
+  const urgentText = `🚨 <b>ការរាយការណ៍បញ្ហាបន្ទាន់ (Urgent IT Report)</b>\n` +
+    `━━━━━━━━━━━━━━━━━━━━━\n` +
+    `សម្រាប់បញ្ហាគាំងប្រព័ន្ធទាំងមូល, ដាច់អ៊ីនធឺណិតទូទាំងក្រុមហ៊ុន, ឬ Server Error:\n\n` +
+    `1. ផ្ញើសារសំឡេង ឬអក្សរដោយដាក់ពាក្យ <b>"URGENT / បន្ទាន់"</b> នៅខាងដើម។\n` +
+    `2. AI នឹងកំណត់កម្រិតជា 🔴 <b>High Urgency</b> ដោយស្វ័យប្រវត្តិ។\n` +
+    `3. ក្រុមការងារ IT Support នឹងទទួលបានការជូនដំណឹងភ្លាមៗ!`;
+
+  ctx.reply(urgentText, { parse_mode: 'HTML' });
+});
+
+bot.command('contact', (ctx) => {
+  const contactText = `📞 <b>ទំនាក់ទំនងក្រុមការងារ IT (IT Support Contact)</b>\n` +
+    `━━━━━━━━━━━━━━━━━━━━━\n` +
+    `🕒 <b>ម៉ោងធ្វើការ (Working Hours):</b>\n` +
+    `• ច័ន្ទ - សុក្រ (Mon - Fri): 8:00 AM - 5:00 PM\n` +
+    `• សៅរ៍ (Sat): 8:00 AM - 12:00 PM\n\n` +
+    `📧 <b>Email:</b> itsupport@company.com\n` +
+    `🏢 <b>Office:</b> IT Department (Floor 2)`;
+
+  ctx.reply(contactText, { parse_mode: 'HTML' });
+});
+
+bot.command('status', (ctx) => {
+  const uptimeSeconds = Math.floor(process.uptime());
+  const hours = Math.floor(uptimeSeconds / 3600);
+  const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+
+  const statusText = `🟢 <b>IT Bot System Status</b>\n` +
+    `━━━━━━━━━━━━━━━━━━━━━\n` +
+    `• <b>Service:</b> Online & Operational\n` +
+    `• <b>AI Model:</b> Gemini 3.6 Flash (Khmer & English)\n` +
+    `• <b>Uptime:</b> ${hours}h ${minutes}m\n` +
+    `• <b>Auto IT Forwarding:</b> Active ✅`;
+
+  ctx.reply(statusText, { parse_mode: 'HTML' });
+});
+
 bot.command('getid', (ctx) => {
   const chatId = ctx.chat.id;
   const chatType = ctx.chat.type;
