@@ -13,7 +13,7 @@ A Node.js backend using **Google Gemini 1.5 Flash** to:
 ### 1. Configure `.env`
 Edit `gemini_bot/.env`:
 ```env
-BOT_TOKEN=8651357401:AAEy0ZVxabhvul67WaJZiDv7vOpTrlR5UqE
+BOT_TOKEN=
 GEMINI_API_KEY=your_gemini_api_key_here
 IT_GROUP_ID=your_it_support_group_id
 PORT=3000
