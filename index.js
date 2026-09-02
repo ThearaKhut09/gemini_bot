@@ -460,8 +460,7 @@ async function processUnifiedTicket(sessionKey) {
       alertMessage += `💡 <b>ដំណោះស្រាយបឋម (Suggested Action):</b>\n${parsed.recommended_action}\n`;
     }
 
-    alertMessage += `━━━━━━━━━━━━━━━━━━━━━\n`;
-    alertMessage += `⚙️ <i>Powered by ${parsed.engineUsed}</i>`;
+    alertMessage += `━━━━━━━━━━━━━━━━━━━━━`;
 
     await sendToITGroup(alertMessage, photoPaths);
 
