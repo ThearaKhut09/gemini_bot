@@ -6,17 +6,20 @@ import os from 'os';
 import axios from 'axios';
 import express from 'express';
 import { Telegraf } from 'telegraf';
+import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load .env explicitly from the bot directory
+// Load .env explicitly
 dotenv.config({ path: path.join(__dirname, '.env') });
 
 const {
   BOT_TOKEN,
+  OPENAI_API_KEY,
   GEMINI_API_KEY,
+  AI_PROVIDER = 'auto', // 'openai' | 'gemini' | 'auto'
   IT_GROUP_ID,
   MONITORED_GROUP_ID,
   PORT = 3000
@@ -27,8 +30,8 @@ if (!BOT_TOKEN) {
   process.exit(1);
 }
 
-if (!GEMINI_API_KEY) {
-  console.error('❌ Missing GEMINI_API_KEY in environment variables!');
+if (!OPENAI_API_KEY && !GEMINI_API_KEY) {
+  console.error('❌ Missing both OPENAI_API_KEY and GEMINI_API_KEY! Please provide at least one.');
   process.exit(1);
 }
 
@@ -40,8 +43,12 @@ if (!IT_GROUP_ID) {
 // 2. Initialize Clients
 // ==========================================
 const bot = new Telegraf(BOT_TOKEN);
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-const geminiModel = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
+const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
+
+console.log(`🤖 AI Engine Initialized: Provider mode = [${AI_PROVIDER.toUpperCase()}]`);
+if (openai) console.log('✅ OpenAI Client ready');
+if (genAI) console.log('✅ Google Gemini Client ready');
 
 // ==========================================
 // 3. Lightweight Health Check Web Server
@@ -52,8 +59,8 @@ app.use(express.json());
 app.get('/', (req, res) => {
   res.json({
     status: 'online',
-    service: 'Telegram IT Support Smart Bundler Bot (Google Gemini AI)',
-    model: 'gemini-3.6-flash',
+    service: 'Telegram IT Support Bot (Hybrid OpenAI & Gemini)',
+    activeProvider: AI_PROVIDER,
     timestamp: new Date().toISOString()
   });
 });
@@ -68,10 +75,8 @@ const server = app.listen(PORT, () => {
 // 4. Utility Functions & Storage
 // ==========================================
 
-// In-memory buffer for grouping user messages (5-second window for fast delivery)
-// Key: `${chatId}_${userId}`
 const reportSessions = new Map();
-const BUFFER_WINDOW_MS = 5000; // 5 seconds (fast response)
+const BUFFER_WINDOW_MS = 5000; // 5-second bundling window
 
 function formatUserInfo(user) {
   const nameParts = [user.first_name, user.last_name].filter(Boolean);
@@ -128,65 +133,10 @@ function fileToGenerativePart(filePath, mimeType) {
   };
 }
 
-// Ultra-fast Lite & Flash models in priority order
-const FALLBACK_MODELS = [
-  'gemini-2.5-flash-lite',
-  'gemini-3.5-flash-lite',
-  'gemini-3.5-flash',
-  'gemini-3.6-flash',
-  'gemini-flash-latest'
-];
-
-/**
- * Helper to race a promise with a timeout (prevents long hanging requests)
- */
-function withTimeout(promise, timeoutMs = 8000) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error('AI request timed out')), timeoutMs))
-  ]);
-}
-
-/**
- * Executes Gemini generateContent with auto-retry and multi-model fallback
- */
-async function generateWithFallback(generativeParts) {
-  let lastError = null;
-
-  for (const modelName of FALLBACK_MODELS) {
-    const model = genAI.getGenerativeModel({ model: modelName });
-
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        console.log(`⚡ Requesting AI analysis with [${modelName}] (attempt ${attempt})...`);
-        const result = await withTimeout(model.generateContent(generativeParts), 8000);
-        console.log(`✅ AI responded successfully using [${modelName}]`);
-        return result.response.text();
-      } catch (err) {
-        lastError = err;
-        const is503OrBusy = err.message?.includes('503') || err.message?.includes('high demand') || err.message?.includes('timed out') || err.status === 503;
-
-        if (is503OrBusy) {
-          console.warn(`⚠️ Model [${modelName}] slow/busy (attempt ${attempt}). Trying next...`);
-          if (attempt === 1) await new Promise(r => setTimeout(r, 800));
-        } else {
-          break;
-        }
-      }
-    }
-  }
-
-  throw lastError || new Error('All Gemini model fallbacks exhausted.');
-}
-
-/**
- * Sends messages to IT Group with automatic supergroup migration support
- */
 async function sendToITGroup(alertMessage, photos = []) {
   if (!IT_GROUP_ID) return;
 
   async function executeSend(targetId) {
-    // If photos are attached, send them as a media group first
     if (photos.length > 0) {
       try {
         const mediaGroup = photos.map((filePath, idx) => ({
@@ -208,13 +158,13 @@ async function sendToITGroup(alertMessage, photos = []) {
 
   try {
     await executeSend(IT_GROUP_ID);
-    console.log(`🚀 Unified Ticket successfully forwarded to IT Group (${IT_GROUP_ID})`);
+    console.log(`🚀 Unified Ticket forwarded to IT Group (${IT_GROUP_ID})`);
   } catch (sendErr) {
     if (sendErr.response?.parameters?.migrate_to_chat_id) {
       const newChatId = sendErr.response.parameters.migrate_to_chat_id;
       console.log(`🔄 Group upgraded to Supergroup! Retrying with new ID: ${newChatId}`);
       await executeSend(newChatId);
-      console.log(`🚀 Unified Ticket successfully sent to new Supergroup ID (${newChatId})`);
+      console.log(`🚀 Unified Ticket sent to new Supergroup ID (${newChatId})`);
     } else {
       throw sendErr;
     }
@@ -222,7 +172,162 @@ async function sendToITGroup(alertMessage, photos = []) {
 }
 
 // ==========================================
-// 5. Smart Ticket Bundling & Processing Engine
+// 5. Dual Engine Processors (OpenAI & Gemini)
+// ==========================================
+
+async function processWithOpenAI(items, downloadedFiles, photoPaths) {
+  if (!openai) throw new Error('OpenAI client not configured (Missing OPENAI_API_KEY)');
+
+  const voiceTranscriptions = [];
+
+  // 1. Transcribe audio with Whisper
+  for (const item of items.filter(i => i.type === 'voice')) {
+    const fileLink = await bot.telegram.getFileLink(item.fileId);
+    const tempPath = await downloadTelegramFile(fileLink.href, item.ext || 'ogg');
+    downloadedFiles.push(tempPath);
+
+    console.log(`🎙️ [OpenAI] Transcribing with Whisper...`);
+    const transcription = await openai.audio.transcriptions.create({
+      file: fs.createReadStream(tempPath),
+      model: 'whisper-1',
+      language: 'km',
+      response_format: 'text',
+      temperature: 0.2
+    });
+
+    const text = (typeof transcription === 'string' ? transcription : transcription.text || '').trim();
+    if (text) voiceTranscriptions.push(text);
+  }
+
+  // 2. Download photos for Vision
+  const imagePayloads = [];
+  for (const item of items.filter(i => i.type === 'photo')) {
+    const fileLink = await bot.telegram.getFileLink(item.fileId);
+    const tempPath = await downloadTelegramFile(fileLink.href, 'jpg');
+    downloadedFiles.push(tempPath);
+    photoPaths.push(tempPath);
+
+    const base64Image = fs.readFileSync(tempPath).toString('base64');
+    imagePayloads.push({
+      type: 'image_url',
+      image_url: { url: `data:image/jpeg;base64,${base64Image}` }
+    });
+  }
+
+  const userTexts = items.filter(i => i.type === 'text').map(t => t.text).join('\n');
+  const combinedTranscriptions = voiceTranscriptions.join('\n');
+
+  // 3. Reason with GPT-4o-mini
+  const promptText = `
+You are an expert IT Support Engineer and linguist.
+Analyze this ticket report:
+- User Typed Text: "${userTexts || '(None)'}"
+- Voice Transcriptions: "${combinedTranscriptions || '(None)'}"
+- Attached Images: ${items.some(i => i.type === 'photo') ? 'See attached images' : 'No images'}
+
+Task:
+1. Detect primary language (Khmer or English).
+2. OCR: Read any visible error codes or texts from the images (if any).
+3. Provide a 1-2 sentence issue summary in the SAME language (if Khmer -> Khmer; if English -> English).
+4. Suggest Urgency level: "Low", "Medium", or "High".
+5. Suggest a 1-sentence recommended action / troubleshooting step for the IT technician.
+
+Return ONLY a valid JSON object matching this schema without code blocks:
+{
+  "language": "Khmer" | "English",
+  "ocr_text": "Error codes / text found or 'None'",
+  "issue_summary": "1-2 sentence issue summary",
+  "urgency": "Low" | "Medium" | "High",
+  "recommended_action": "Suggested troubleshooting step"
+}
+`;
+
+  console.log(`🤖 [OpenAI] Analyzing issue with GPT-4o Mini...`);
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [{ role: 'user', content: [{ type: 'text', text: promptText }, ...imagePayloads] }],
+    response_format: { type: 'json_object' },
+    temperature: 0.2
+  });
+
+  const parsed = JSON.parse(completion.choices[0].message.content);
+  parsed.engineUsed = 'OpenAI (Whisper + GPT-4o Mini)';
+  parsed.voice_transcriptions = voiceTranscriptions;
+  return parsed;
+}
+
+async function processWithGemini(items, downloadedFiles, photoPaths) {
+  if (!genAI) throw new Error('Gemini client not configured (Missing GEMINI_API_KEY)');
+
+  const generativeParts = [];
+
+  for (const item of items) {
+    if (item.type === 'voice') {
+      const fileLink = await bot.telegram.getFileLink(item.fileId);
+      const tempPath = await downloadTelegramFile(fileLink.href, item.ext || 'ogg');
+      downloadedFiles.push(tempPath);
+      generativeParts.push(fileToGenerativePart(tempPath, item.mimeType || 'audio/ogg'));
+    } else if (item.type === 'photo') {
+      const fileLink = await bot.telegram.getFileLink(item.fileId);
+      const tempPath = await downloadTelegramFile(fileLink.href, 'jpg');
+      downloadedFiles.push(tempPath);
+      photoPaths.push(tempPath);
+      generativeParts.push(fileToGenerativePart(tempPath, 'image/jpeg'));
+    }
+  }
+
+  const userTexts = items.filter(i => i.type === 'text').map(t => t.text).join('\n');
+
+  const prompt = `
+You are an expert IT Support Engineer and linguist. Analyze this complete issue report bundle from an employee.
+User Text: "${userTexts || '(None)'}".
+
+Perform:
+1. Detect the primary language (Khmer or English).
+2. OCR: Read error codes/texts from photos or 'None'.
+3. Transcribe all voice notes sequentially in original language.
+4. Summarize overall issue in 1-2 sentences in SAME language (if Khmer -> Khmer; if English -> English).
+5. Suggest Urgency: "Low", "Medium", or "High".
+6. Suggest 1-sentence recommended action for IT technician.
+
+Return ONLY a JSON object:
+{
+  "language": "Khmer" | "English",
+  "ocr_text": "Error codes / text found or 'None'",
+  "voice_transcriptions": ["Voice note 1...", "Voice note 2..."],
+  "issue_summary": "1-2 sentence issue summary",
+  "urgency": "Low" | "Medium" | "High",
+  "recommended_action": "Suggested troubleshooting step"
+}
+`;
+
+  generativeParts.push(prompt);
+
+  const fallbackModels = ['gemini-2.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.6-flash'];
+  let responseText = null;
+
+  for (const modelName of fallbackModels) {
+    try {
+      console.log(`⚡ [Gemini] Requesting AI analysis with [${modelName}]...`);
+      const model = genAI.getGenerativeModel({ model: modelName });
+      const result = await model.generateContent(generativeParts);
+      responseText = result.response.text();
+      break;
+    } catch (e) {
+      console.warn(`⚠️ [Gemini] Model ${modelName} busy/failed:`, e.message);
+    }
+  }
+
+  if (!responseText) throw new Error('All Gemini models failed');
+
+  const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+  const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { issue_summary: responseText, urgency: 'Medium' };
+  parsed.engineUsed = 'Google Gemini AI';
+  return parsed;
+}
+
+// ==========================================
+// 6. Smart Ticket Bundling & Processing Engine
 // ==========================================
 
 function bufferUserReport(ctx, item) {
@@ -243,19 +348,16 @@ function bufferUserReport(ctx, item) {
     };
     reportSessions.set(sessionKey, session);
   } else {
-    // Clear previous timer to extend buffer window
     clearTimeout(session.timer);
     session.lastMessageId = ctx.message.message_id;
   }
 
   session.items.push(item);
 
-  // Acknowledge receipt quietly in chat
   try {
     if (ctx.react) ctx.react('👍');
   } catch (e) { }
 
-  // Set debounce timer (15 seconds)
   session.timer = setTimeout(() => {
     processUnifiedTicket(sessionKey);
   }, BUFFER_WINDOW_MS);
@@ -275,87 +377,41 @@ async function processUnifiedTicket(sessionKey) {
   const photoCount = items.filter(i => i.type === 'photo').length;
   const textCount = items.filter(i => i.type === 'text').length;
   const totalDuration = items.filter(i => i.type === 'voice').reduce((sum, v) => sum + (v.duration || 0), 0);
+  const userTexts = items.filter(i => i.type === 'text').map(t => t.text).join('\n');
 
   console.log(`⚡ Processing unified ticket for [${fullName}] in [${groupTitle}] (${voiceCount} voice, ${photoCount} photos, ${textCount} text)`);
 
   const downloadedFiles = [];
   const photoPaths = [];
+  let parsed = null;
 
   try {
-    const generativeParts = [];
+    const provider = AI_PROVIDER.toLowerCase();
 
-    // 1. Download and convert all media items
-    for (const item of items) {
-      if (item.type === 'voice') {
-        const fileLink = await bot.telegram.getFileLink(item.fileId);
-        const tempPath = await downloadTelegramFile(fileLink.href, item.ext || 'ogg');
-        downloadedFiles.push(tempPath);
-        generativeParts.push(fileToGenerativePart(tempPath, item.mimeType || 'audio/ogg'));
-      } else if (item.type === 'photo') {
-        const fileLink = await bot.telegram.getFileLink(item.fileId);
-        const tempPath = await downloadTelegramFile(fileLink.href, 'jpg');
-        downloadedFiles.push(tempPath);
-        photoPaths.push(tempPath);
-        generativeParts.push(fileToGenerativePart(tempPath, 'image/jpeg'));
+    if (provider === 'openai') {
+      parsed = await processWithOpenAI(items, downloadedFiles, photoPaths);
+    } else if (provider === 'gemini') {
+      parsed = await processWithGemini(items, downloadedFiles, photoPaths);
+    } else {
+      // 'auto' mode: Try OpenAI first, if fails or no key, fallback to Gemini!
+      try {
+        if (openai) {
+          parsed = await processWithOpenAI(items, downloadedFiles, photoPaths);
+        } else {
+          parsed = await processWithGemini(items, downloadedFiles, photoPaths);
+        }
+      } catch (primaryErr) {
+        console.warn('⚠️ Primary AI provider failed, attempting automatic fallback...', primaryErr.message);
+        if (openai && genAI) {
+          parsed = await processWithGemini(items, downloadedFiles, photoPaths);
+        } else {
+          throw primaryErr;
+        }
       }
     }
 
-    // 2. Prepare text descriptions
-    const userTexts = items.filter(i => i.type === 'text').map(t => t.text).join('\n');
+    console.log(`✅ AI Processing Complete (${parsed.engineUsed}):`, parsed);
 
-    // 3. Multimodal Prompt for Gemini
-    const prompt = `
-You are an expert IT Support Engineer and linguist. Analyze this complete issue report bundle from an employee.
-The bundle may contain:
-- Images/photos of broken screens, error codes, hardware.
-- Audio voice notes in Khmer or English.
-- Text messages written by the user: "${userTexts || '(None)'}".
-
-Perform the following:
-1. Detect the primary language used (Khmer or English).
-2. OCR: Read and extract any visible error codes, dialog texts, or screen details from attached images.
-3. Transcribe all voice notes sequentially in their original language.
-4. Summarize the overall issue in 1-2 clear sentences in the SAME primary language (if Khmer -> Khmer; if English -> English).
-5. Suggest the Urgency level: "Low", "Medium", or "High".
-6. Suggest a 1-sentence recommended action / troubleshooting step for the IT technician.
-
-Return ONLY a valid JSON object matching this schema without markdown code blocks:
-{
-  "language": "Khmer" | "English",
-  "ocr_text": "Error codes / text found in photos or 'None'",
-  "voice_transcriptions": ["Voice note 1 transcription...", "Voice note 2 transcription..."],
-  "issue_summary": "1-2 sentence issue summary in primary language",
-  "urgency": "Low" | "Medium" | "High",
-  "recommended_action": "Suggested troubleshooting step for IT team"
-}
-`;
-
-    generativeParts.push(prompt);
-
-    // 4. Send combined bundle to Gemini with auto-retry and multi-model fallback
-    const responseText = await generateWithFallback(generativeParts);
-
-    let parsed = {
-      language: 'Khmer',
-      ocr_text: 'None',
-      voice_transcriptions: [],
-      issue_summary: userTexts || 'សូមពិនិត្យមើលសារ និងរូបភាពភ្ជាប់',
-      urgency: 'Medium',
-      recommended_action: 'ពិនិត្យមើលឧបករណ៍ និងប្រព័ន្ធផ្ទាល់'
-    };
-
-    try {
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        parsed = JSON.parse(jsonMatch[0]);
-      }
-    } catch (e) {
-      console.warn('Could not parse JSON from Gemini response, using fallback');
-    }
-
-    console.log(`✅ Gemini Unified Ticket Analysis:`, parsed);
-
-    // 5. Construct Master Ticket Message
     const timestamp = new Date().toLocaleString('en-US', {
       timeZone: 'Asia/Phnom_Penh',
       dateStyle: 'medium',
@@ -371,26 +427,23 @@ Return ONLY a valid JSON object matching this schema without markdown code block
     alertMessage += `🆔 <b>User ID:</b> <code>${userId}</code>\n`;
     alertMessage += `🏢 <b>Source:</b> ${groupTitle}\n`;
     alertMessage += `📦 <b>Bundle:</b> ${voiceCount} 🎙️ (${formatDuration(totalDuration)}) | ${photoCount} 📸 | ${textCount} 💬\n`;
-    alertMessage += `${urgencyEmoji} <b>Urgency:</b> <b>${parsed.urgency}</b>\n`;
+    alertMessage += `${urgencyEmoji} <b>Urgency:</b> <b>${parsed.urgency || 'Normal'}</b>\n`;
     alertMessage += `📅 <b>Time:</b> ${timestamp} (GMT+7)\n`;
     if (messageLink) {
       alertMessage += `🔗 <b>Original Message:</b> <a href="${messageLink}">View in Group</a>\n`;
     }
     alertMessage += `━━━━━━━━━━━━━━━━━━━━━\n`;
 
-    // OCR Information
     if (parsed.ocr_text && parsed.ocr_text !== 'None' && parsed.ocr_text !== 'គ្មាន') {
       alertMessage += `🔍 <b>Visual Screen OCR / Error:</b>\n<code>${parsed.ocr_text}</code>\n\n`;
     }
 
-    // Issue Summary
     if (isKhmer) {
       alertMessage += `📌 <b>សង្ខេបបញ្ហា (Issue Summary):</b>\n${parsed.issue_summary}\n\n`;
     } else {
       alertMessage += `📌 <b>Issue Summary:</b>\n${parsed.issue_summary}\n\n`;
     }
 
-    // Voice Transcriptions
     if (parsed.voice_transcriptions && parsed.voice_transcriptions.length > 0) {
       alertMessage += isKhmer ? `📝 <b>អត្ថបទសំឡេង (Voice Transcriptions):</b>\n` : `📝 <b>Voice Transcriptions:</b>\n`;
       parsed.voice_transcriptions.forEach((trans, idx) => {
@@ -399,31 +452,31 @@ Return ONLY a valid JSON object matching this schema without markdown code block
       alertMessage += `\n`;
     }
 
-    // Original Text
     if (userTexts) {
       alertMessage += `💬 <b>សារអក្សរ (Text Content):</b>\n<i>${userTexts}</i>\n\n`;
     }
 
-    // Recommended Action
-    alertMessage += `💡 <b>ដំណោះស្រាយបឋម (Suggested Action):</b>\n${parsed.recommended_action}\n`;
-    alertMessage += `━━━━━━━━━━━━━━━━━━━━━`;
+    if (parsed.recommended_action) {
+      alertMessage += `💡 <b>ដំណោះស្រាយបឋម (Suggested Action):</b>\n${parsed.recommended_action}\n`;
+    }
 
-    // 6. Forward Unified Ticket to IT Group
+    alertMessage += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    alertMessage += `⚙️ <i>Powered by ${parsed.engineUsed}</i>`;
+
     await sendToITGroup(alertMessage, photoPaths);
 
   } catch (err) {
-    console.error('❌ Error processing unified ticket with Gemini:', err.message || err);
+    console.error('❌ Error processing ticket:', err.message || err);
 
     const errorMessage = `⚠️ <b>TICKET PROCESSING ERROR</b>\n` +
       `━━━━━━━━━━━━━━━━━━━━━\n` +
       `👤 <b>Reporter:</b> ${fullName} (${username})\n` +
       `🏢 <b>Source:</b> ${groupTitle}\n` +
-      `❌ <b>Error:</b> <code>${err.message || 'Error occurred during AI analysis'}</code>\n` +
+      `❌ <b>Error:</b> <code>${err.message || 'Error occurred during AI processing'}</code>\n` +
       `━━━━━━━━━━━━━━━━━━━━━`;
 
     await sendToITGroup(errorMessage).catch(() => { });
   } finally {
-    // 7. Cleanup temp files
     downloadedFiles.forEach(file => {
       if (fs.existsSync(file)) {
         fs.promises.unlink(file).catch(() => { });
@@ -433,7 +486,7 @@ Return ONLY a valid JSON object matching this schema without markdown code block
 }
 
 // ==========================================
-// 6. Telegram Bot Commands & Listeners
+// 7. Telegram Bot Commands & Listeners
 // ==========================================
 
 bot.start((ctx) => {
@@ -450,7 +503,6 @@ bot.command('help', (ctx) => {
     `• ថតរូបអេក្រង់ដែលចេញ Error ឬឧបករណ៍ដែលខូច រួចផ្ញើចូល Group។\n\n` +
     `💬 <b>ផ្ញើសារអក្សរ (Text Message):</b>\n` +
     `• សរសេរសាររៀបរាប់ពីបញ្ហាធម្មតា។\n\n` +
-    `✨ <i>អ្នកអាចផ្ញើរូបភាព + សារសំឡេងច្រើនរួមគ្នាបាន! Bot នឹងចងក្រងជាសំបុត្រ IT តែមួយយ៉ាងមានរបៀប។</i>\n\n` +
     `⚡ <b>បញ្ជី Commands:</b>\n` +
     `• /report - ការណែនាំរបៀបរាយការណ៍\n` +
     `• /urgent - រាយការណ៍បញ្ហាបន្ទាន់\n` +
@@ -505,8 +557,8 @@ bot.command('status', (ctx) => {
   const statusText = `🟢 <b>IT Bot System Status</b>\n` +
     `━━━━━━━━━━━━━━━━━━━━━\n` +
     `• <b>Service:</b> Online & Operational\n` +
-    `• <b>AI Engine:</b> Gemini 3.6 Flash (Multimodal Audio & Vision)\n` +
-    `• <b>Ticket Bundling:</b> Active (15s buffer)\n` +
+    `• <b>Active AI Engine:</b> ${AI_PROVIDER.toUpperCase()}\n` +
+    `• <b>Ticket Bundling:</b> Active (5s buffer)\n` +
     `• <b>Uptime:</b> ${hours}h ${minutes}m\n` +
     `• <b>Auto IT Forwarding:</b> Active ✅`;
 
@@ -524,10 +576,9 @@ bot.command('getid', (ctx) => {
 });
 
 // ----------------------------------------------------
-// Media & Message Listeners with 15s Buffer
+// Media & Message Listeners
 // ----------------------------------------------------
 
-// 1. Voice Notes & Audio
 bot.on(['voice', 'audio'], (ctx) => {
   const chat = ctx.chat;
   if (MONITORED_GROUP_ID && chat.id.toString() !== MONITORED_GROUP_ID.toString()) return;
@@ -545,13 +596,11 @@ bot.on(['voice', 'audio'], (ctx) => {
   });
 });
 
-// 2. Photos & Screenshots
 bot.on('photo', (ctx) => {
   const chat = ctx.chat;
   if (MONITORED_GROUP_ID && chat.id.toString() !== MONITORED_GROUP_ID.toString()) return;
   if (IT_GROUP_ID && chat.id.toString() === IT_GROUP_ID.toString()) return;
 
-  // Grab the highest resolution photo
   const photos = ctx.message.photo;
   const largestPhoto = photos[photos.length - 1];
 
@@ -561,7 +610,6 @@ bot.on('photo', (ctx) => {
     caption: ctx.message.caption || ''
   });
 
-  // If caption was typed with photo, buffer as text too
   if (ctx.message.caption) {
     bufferUserReport(ctx, {
       type: 'text',
@@ -570,12 +618,11 @@ bot.on('photo', (ctx) => {
   }
 });
 
-// 3. Text Messages
 bot.on('text', (ctx) => {
   const chat = ctx.chat;
   const userText = (ctx.message.text || '').trim();
 
-  if (userText.startsWith('/')) return; // Ignore commands
+  if (userText.startsWith('/')) return;
   if (MONITORED_GROUP_ID && chat.id.toString() !== MONITORED_GROUP_ID.toString()) return;
   if (IT_GROUP_ID && chat.id.toString() === IT_GROUP_ID.toString()) return;
 
@@ -590,7 +637,7 @@ bot.catch((err, ctx) => {
 });
 
 bot.launch()
-  .then(() => console.log('🤖 Telegram IT Support Smart Bundler Bot is successfully running!'))
+  .then(() => console.log(`🤖 Telegram IT Support Bot is running in [${AI_PROVIDER.toUpperCase()}] mode!`))
   .catch((err) => {
     console.error('❌ Failed to start bot:', err);
     process.exit(1);
