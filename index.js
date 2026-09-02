@@ -228,17 +228,17 @@ Analyze this ticket report:
 Task:
 1. Detect primary language (Khmer or English).
 2. OCR: Read any visible error codes or texts from the images (if any).
-3. Provide a 1-2 sentence issue summary in the SAME language (if Khmer -> Khmer; if English -> English).
+3. Provide a 1-2 sentence issue summary in the SAME language (if Khmer -> write summary in Khmer; if English -> write summary in English).
 4. Suggest Urgency level: "Low", "Medium", or "High".
-5. Suggest a 1-sentence recommended action / troubleshooting step for the IT technician.
+5. Suggest a 1-sentence recommended action / troubleshooting step in the SAME language (if Khmer -> write action in Khmer; if English -> write action in English).
 
 Return ONLY a valid JSON object matching this schema without code blocks:
 {
   "language": "Khmer" | "English",
   "ocr_text": "Error codes / text found or 'None'",
-  "issue_summary": "1-2 sentence issue summary",
+  "issue_summary": "1-2 sentence issue summary in detected language",
   "urgency": "Low" | "Medium" | "High",
-  "recommended_action": "Suggested troubleshooting step"
+  "recommended_action": "Suggested troubleshooting step in the SAME language (Khmer if Khmer, English if English)"
 }
 `;
 
@@ -288,16 +288,16 @@ Perform:
 3. Transcribe all voice notes sequentially in original language.
 4. Summarize overall issue in 1-2 sentences in SAME language (if Khmer -> Khmer; if English -> English).
 5. Suggest Urgency: "Low", "Medium", or "High".
-6. Suggest 1-sentence recommended action for IT technician.
+6. Suggest 1-sentence recommended action in the SAME language (if Khmer -> Khmer; if English -> English).
 
 Return ONLY a JSON object:
 {
   "language": "Khmer" | "English",
   "ocr_text": "Error codes / text found or 'None'",
   "voice_transcriptions": ["Voice note 1...", "Voice note 2..."],
-  "issue_summary": "1-2 sentence issue summary",
+  "issue_summary": "1-2 sentence issue summary in detected language",
   "urgency": "Low" | "Medium" | "High",
-  "recommended_action": "Suggested troubleshooting step"
+  "recommended_action": "Suggested troubleshooting step in the SAME language (Khmer if Khmer, English if English)"
 }
 `;
 
