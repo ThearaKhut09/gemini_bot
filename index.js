@@ -156,7 +156,7 @@ async function sendToITGroup(alertMessage) {
 // ==========================================
 
 bot.start((ctx) => {
-  ctx.reply('👋 Hello! I am the IT Report Tracker Bot powered by Google Gemini AI.\n\nSend voice or text messages in Khmer or English, and I will transcribe, summarize, and route them to IT Support.');
+  ctx.reply('👋 Hello! I am the Voice Report Tracker Bot.\n\nSend or forward voice messages in this group to transcribe Khmer speech and alert IT Support.');
 });
 
 bot.command('getid', (ctx) => {
