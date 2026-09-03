@@ -355,7 +355,7 @@ function bufferUserReport(ctx, item) {
   session.items.push(item);
 
   try {
-    if (ctx.react) ctx.react('👍');
+    if (ctx.react) ctx.react('✍️');
   } catch (e) { }
 
   session.timer = setTimeout(() => {
