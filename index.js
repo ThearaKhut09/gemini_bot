@@ -530,7 +530,25 @@ async function processUnifiedTicket(sessionKey) {
 // ==========================================
 
 bot.start((ctx) => {
-  ctx.reply('👋 Hello! I am the Voice Report Tracker Bot.\n\nSend or forward voice messages in this group to transcribe Khmer speech and alert IT Support.');
+  const welcomeText = `👋 <b>ស្វាគមន៍មកកាន់ IT Support Bot</b>\n` +
+    `━━━━━━━━━━━━━━━━━━━━━\n` +
+    `ផ្ញើសារសំឡេង 🎙️ រូបភាព Error 📸 ឬអក្សរ 💬 ក្នុង Group ដើម្បីស្នើសុំជំនួយបច្ចេកទេស។\n\n` +
+    `👇 <b>ចុចប៊ូតុងខាងក្រោមដើម្បីជ្រើសរើស (Quick Menu):</b>`;
+
+  const keyboard = {
+    inline_keyboard: [
+      [
+        { text: '📝 Report Guide', callback_data: 'cmd_report' },
+        { text: '🚨 Urgent Report', callback_data: 'cmd_urgent' }
+      ],
+      [
+        { text: '📞 Contact IT', callback_data: 'cmd_contact' },
+        { text: '🟢 System Status', callback_data: 'cmd_status' }
+      ]
+    ]
+  };
+
+  ctx.reply(welcomeText, { parse_mode: 'HTML', reply_markup: keyboard });
 });
 
 bot.command('help', (ctx) => {
@@ -543,17 +561,26 @@ bot.command('help', (ctx) => {
     `• ថតរូបអេក្រង់ដែលចេញ Error ឬឧបករណ៍ដែលខូច រួចផ្ញើចូល Group។\n\n` +
     `💬 <b>ផ្ញើសារអក្សរ (Text Message):</b>\n` +
     `• សរសេរសាររៀបរាប់ពីបញ្ហាធម្មតា។\n\n` +
-    `⚡ <b>បញ្ជី Commands:</b>\n` +
-    `• /report - ការណែនាំរបៀបរាយការណ៍\n` +
-    `• /urgent - រាយការណ៍បញ្ហាបន្ទាន់\n` +
-    `• /contact - ព័ត៌មានទំនាក់ទំនងផ្នែក IT\n` +
-    `• /status - ស្ថានភាពប្រព័ន្ធ Bot\n` +
-    `• /getid - បង្ហាញ Chat ID នៃ Group`;
+    `👇 <b>ចុចប៊ូតុងខាងក្រោមដើម្បីមើលព័ត៌មានបន្ថែម៖</b>`;
 
-  ctx.reply(helpText, { parse_mode: 'HTML' });
+  const keyboard = {
+    inline_keyboard: [
+      [
+        { text: '📝 Report Guide', callback_data: 'cmd_report' },
+        { text: '🚨 Urgent Report', callback_data: 'cmd_urgent' }
+      ],
+      [
+        { text: '📞 Contact IT', callback_data: 'cmd_contact' },
+        { text: '🟢 System Status', callback_data: 'cmd_status' }
+      ]
+    ]
+  };
+
+  ctx.reply(helpText, { parse_mode: 'HTML', reply_markup: keyboard });
 });
 
-bot.command('report', (ctx) => {
+// Report Handlers
+function sendReportGuide(ctx) {
   const reportGuide = `📝 <b>របៀបស្នើសុំជំនួយបច្ចេកទេស (IT Ticket Guide)</b>\n` +
     `━━━━━━━━━━━━━━━━━━━━━\n` +
     `ដើម្បីឱ្យក្រុមការងារ IT ជួយដោះស្រាយបានលឿន សូមបញ្ជាក់៖\n\n` +
@@ -562,19 +589,74 @@ bot.command('report', (ctx) => {
     `3️⃣ <b>រូបភាព (Photo):</b> ថតរូប Error screen បើមាន 📸\n` +
     `4️⃣ <b>ទីតាំង (Location):</b> បន្ទប់ / ជាន់ / ផ្នែក\n\n` +
     `👉 <i>ផ្ញើសារសំឡេង 🎙️ រូបភាព 📸 ឬអក្សរ 💬 ក្នុង Group នេះបានភ្លាមៗ!</i>`;
-
   ctx.reply(reportGuide, { parse_mode: 'HTML' });
+}
+
+bot.command('report', (ctx) => sendReportGuide(ctx));
+bot.action('cmd_report', (ctx) => {
+  ctx.answerCbQuery().catch(() => {});
+  sendReportGuide(ctx);
 });
 
-bot.command('urgent', (ctx) => {
+// Urgent Handlers
+function sendUrgentGuide(ctx) {
   const urgentText = `🚨 <b>ការរាយការណ៍បញ្ហាបន្ទាន់ (Urgent IT Report)</b>\n` +
     `━━━━━━━━━━━━━━━━━━━━━\n` +
     `សម្រាប់បញ្ហាគាំងប្រព័ន្ធទាំងមូល, ដាច់អ៊ីនធឺណិតទូទាំងក្រុមហ៊ុន, ឬ Server Error:\n\n` +
     `1. ផ្ញើសារសំឡេង ឬអក្សរដោយដាក់ពាក្យ <b>"URGENT / បន្ទាន់"</b> នៅខាងដើម។\n` +
     `2. AI នឹងកំណត់កម្រិតជា 🔴 <b>High Urgency</b> ដោយស្វ័យប្រវត្តិ។\n` +
     `3. ក្រុមការងារ IT Support នឹងទទួលបានការជូនដំណឹងភ្លាមៗ!`;
-
   ctx.reply(urgentText, { parse_mode: 'HTML' });
+}
+
+bot.command('urgent', (ctx) => sendUrgentGuide(ctx));
+bot.action('cmd_urgent', (ctx) => {
+  ctx.answerCbQuery().catch(() => {});
+  sendUrgentGuide(ctx);
+});
+
+bot.action('cmd_contact', (ctx) => {
+  ctx.answerCbQuery().catch(() => {});
+  const rawContacts = process.env.IT_SUPPORT_USERNAME || '@ThearaKhut_1, @IT_Support_2';
+  const contactsList = rawContacts
+    .split(/[,|]/)
+    .map(c => c.trim())
+    .filter(Boolean);
+
+  let telegramLines = '';
+  if (contactsList.length > 1) {
+    telegramLines = '✈️ <b>Telegram Support:</b>\n' + contactsList.map(c => `• ${c}`).join('\n');
+  } else {
+    telegramLines = `✈️ <b>Telegram:</b> ${contactsList[0] || '@ThearaKhut_1'}`;
+  }
+
+  const contactText = `📞 <b>ទំនាក់ទំនងក្រុមការងារ IT (IT Support Contact)</b>\n` +
+    `━━━━━━━━━━━━━━━━━━━━━\n` +
+    `🕒 <b>ម៉ោងធ្វើការ (Working Hours):</b>\n` +
+    `• ច័ន្ទ - សុក្រ (Mon - Fri): 8:00 AM - 5:00 PM\n` +
+    `• សៅរ៍ (Sat): 8:00 AM - 3:00 PM\n\n` +
+    `${telegramLines}\n\n` +
+    `📧 <b>Email:</b> itsupport.cam@leesfood.com\n` +
+    `🏢 <b>Office:</b> IT Department (Floor 1)`;
+
+  ctx.reply(contactText, { parse_mode: 'HTML' });
+});
+
+bot.action('cmd_status', (ctx) => {
+  ctx.answerCbQuery().catch(() => {});
+  const uptimeSeconds = Math.floor(process.uptime());
+  const hours = Math.floor(uptimeSeconds / 3600);
+  const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+
+  const statusText = `🟢 <b>IT Bot System Status</b>\n` +
+    `━━━━━━━━━━━━━━━━━━━━━\n` +
+    `• <b>Service:</b> Online & Operational\n` +
+    `• <b>Active AI Engine:</b> ${AI_PROVIDER.toUpperCase()}\n` +
+    `• <b>Ticket Bundling:</b> Active (5s buffer)\n` +
+    `• <b>Anti-Scam Protection:</b> Enabled 🛡️\n` +
+    `• <b>Uptime:</b> ${hours}h ${minutes}m`;
+
+  ctx.reply(statusText, { parse_mode: 'HTML' });
 });
 
 bot.command('contact', (ctx) => {
