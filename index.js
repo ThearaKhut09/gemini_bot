@@ -76,7 +76,7 @@ const server = app.listen(PORT, () => {
 // ==========================================
 
 const reportSessions = new Map();
-const BUFFER_WINDOW_MS = 5000; // 5-second bundling window
+const BUFFER_WINDOW_MS = 10000; // 10-second bundling window
 
 function formatUserInfo(user) {
   const nameParts = [user.first_name, user.last_name].filter(Boolean);
