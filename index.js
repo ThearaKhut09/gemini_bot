@@ -219,26 +219,38 @@ async function processWithOpenAI(items, downloadedFiles, photoPaths) {
 
   // 3. Reason with GPT-4o-mini
   const promptText = `
-You are an expert IT Support Engineer and linguist.
-Analyze this ticket report:
+You are an expert IT Support Engineer, incident triage specialist, and linguist.
+Analyze the user's input:
 - User Typed Text: "${userTexts || '(None)'}"
 - Voice Transcriptions: "${combinedTranscriptions || '(None)'}"
 - Attached Images: ${items.some(i => i.type === 'photo') ? 'See attached images' : 'No images'}
 
-Task:
-1. Detect primary language (Khmer or English).
-2. OCR: Read any visible error codes or texts from the images (if any).
-3. Provide a 1-2 sentence issue summary in the SAME language (if Khmer -> write summary in Khmer; if English -> write summary in English).
-4. Suggest Urgency level: "Low", "Medium", or "High".
-5. Suggest a 1-sentence recommended action / troubleshooting step in the SAME language (if Khmer -> write action in Khmer; if English -> write action in English).
+CRITICAL RULES:
+1. Intent Classification:
+   - Determine whether the user is actually describing a technical problem, error, issue, bug, request for help, or difficulty.
+   - If the input is ONLY a casual greeting (e.g., "Hello", "Hi", "Good morning", "សួស្តី", "thanks", "ok", or small talk), set "is_problem": false. Do not assume every message is a problem.
+   - Only set "is_problem": true when the user actually reports a technical issue or requests assistance.
 
-Return ONLY a valid JSON object matching this schema without code blocks:
+2. Problem Processing (when is_problem is true):
+   - Correct and rewrite any grammar mistakes, unclear wording, or poor sentence structure while preserving original meaning.
+   - Separate unrelated greetings/conversation from the actual problem.
+   - If the user explained across multiple messages/voice notes, combine the relevant information into one clear problem statement.
+   - Detect primary language (Khmer or English).
+   - Write ALL output fields in the SAME detected language (Khmer if Khmer, English if English).
+   - Extract OCR text/error codes from photos if present.
+
+Return ONLY a valid JSON object matching this schema without markdown code blocks:
 {
+  "is_problem": true | false,
   "language": "Khmer" | "English",
-  "ocr_text": "Error codes / text found or 'None'",
-  "issue_summary": "1-2 sentence issue summary in detected language",
+  "ocr_text": "Error codes / text found in photos or 'None'",
+  "problem": "Clear and concise description of the issue",
+  "details": "Important information provided by the user (device, software, location, etc.)",
+  "expected_result": "What the user wants to happen",
+  "current_result": "What is happening instead",
   "urgency": "Low" | "Medium" | "High",
-  "recommended_action": "Suggested troubleshooting step in the SAME language (Khmer if Khmer, English if English)"
+  "recommended_action": "Suggested troubleshooting step for the IT technician",
+  "casual_reply": "Short polite greeting reply if is_problem is false, otherwise empty"
 }
 `;
 
@@ -279,25 +291,37 @@ async function processWithGemini(items, downloadedFiles, photoPaths) {
   const userTexts = items.filter(i => i.type === 'text').map(t => t.text).join('\n');
 
   const prompt = `
-You are an expert IT Support Engineer and linguist. Analyze this complete issue report bundle from an employee.
-User Text: "${userTexts || '(None)'}".
+You are an expert IT Support Engineer, incident triage specialist, and linguist.
+Analyze the user's input:
+- User Typed Text: "${userTexts || '(None)'}"
+- Images: Attached if any.
 
-Perform:
-1. Detect the primary language (Khmer or English).
-2. OCR: Read error codes/texts from photos or 'None'.
-3. Transcribe all voice notes sequentially in original language.
-4. Summarize overall issue in 1-2 sentences in SAME language (if Khmer -> Khmer; if English -> English).
-5. Suggest Urgency: "Low", "Medium", or "High".
-6. Suggest 1-sentence recommended action in the SAME language (if Khmer -> Khmer; if English -> English).
+CRITICAL RULES:
+1. Intent Classification:
+   - Determine whether the user is actually describing a technical problem, error, issue, bug, request for help, or difficulty.
+   - If the input is ONLY a casual greeting (e.g., "Hello", "Hi", "Good morning", "សួស្តី", "thanks", "ok", or small talk), set "is_problem": false. Do not assume every message is a problem.
+   - Only set "is_problem": true when the user actually reports a technical issue or requests assistance.
 
-Return ONLY a JSON object:
+2. Problem Processing (when is_problem is true):
+   - Correct and rewrite any grammar mistakes, unclear wording, or poor sentence structure while preserving original meaning.
+   - Separate unrelated greetings/conversation from the actual problem.
+   - If the user explained across multiple messages/voice notes, combine the relevant information into one clear problem statement.
+   - Detect primary language (Khmer or English).
+   - Write ALL output fields in the SAME detected language (Khmer if Khmer, English if English).
+   - Extract OCR text/error codes from photos if present.
+
+Return ONLY a valid JSON object matching this schema without markdown code blocks:
 {
+  "is_problem": true | false,
   "language": "Khmer" | "English",
-  "ocr_text": "Error codes / text found or 'None'",
-  "voice_transcriptions": ["Voice note 1...", "Voice note 2..."],
-  "issue_summary": "1-2 sentence issue summary in detected language",
+  "ocr_text": "Error codes / text found in photos or 'None'",
+  "problem": "Clear and concise description of the issue",
+  "details": "Important information provided by the user (device, software, location, etc.)",
+  "expected_result": "What the user wants to happen",
+  "current_result": "What is happening instead",
   "urgency": "Low" | "Medium" | "High",
-  "recommended_action": "Suggested troubleshooting step in the SAME language (Khmer if Khmer, English if English)"
+  "recommended_action": "Suggested troubleshooting step for the IT technician",
+  "casual_reply": "Short polite greeting reply if is_problem is false, otherwise empty"
 }
 `;
 
@@ -412,6 +436,16 @@ async function processUnifiedTicket(sessionKey) {
 
     console.log(`✅ AI Processing Complete (${parsed.engineUsed}):`, parsed);
 
+    // 1. If user sent only casual greetings or non-problem messages -> Skip creating IT ticket
+    if (parsed.is_problem === false) {
+      console.log(`ℹ️ [${fullName}] sent a non-problem message (casual/greeting). Skipping IT ticket creation.`);
+      if (chat.type === 'private' && parsed.casual_reply) {
+        await bot.telegram.sendMessage(chat.id, parsed.casual_reply);
+      }
+      return;
+    }
+
+    // 2. User reported an actual technical problem -> Format structured IT ticket
     const timestamp = new Date().toLocaleString('en-US', {
       timeZone: 'Asia/Phnom_Penh',
       dateStyle: 'medium',
@@ -432,18 +466,39 @@ async function processUnifiedTicket(sessionKey) {
     if (messageLink) {
       alertMessage += `🔗 <b>Original Message:</b> <a href="${messageLink}">View in Group</a>\n`;
     }
-    alertMessage += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    alertMessage += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
+    // OCR Information from photos if available
     if (parsed.ocr_text && parsed.ocr_text !== 'None' && parsed.ocr_text !== 'គ្មាន') {
       alertMessage += `🔍 <b>Visual Screen OCR / Error:</b>\n<code>${parsed.ocr_text}</code>\n\n`;
     }
 
+    // Structured 4-field reporting format
     if (isKhmer) {
-      alertMessage += `📌 <b>សង្ខេបបញ្ហា (Issue Summary):</b>\n${parsed.issue_summary}\n\n`;
+      alertMessage += `📌 <b>បញ្ហា (Problem):</b>\n${parsed.problem || parsed.issue_summary}\n\n`;
+      if (parsed.details) {
+        alertMessage += `📋 <b>ព័ត៌មានលម្អិត (Details):</b>\n${parsed.details}\n\n`;
+      }
+      if (parsed.expected_result) {
+        alertMessage += `🎯 <b>លទ្ធផលរំពឹងទុក (Expected Result):</b>\n${parsed.expected_result}\n\n`;
+      }
+      if (parsed.current_result) {
+        alertMessage += `⚠️ <b>លទ្ធផលជាក់ស្តែង (Current Result):</b>\n${parsed.current_result}\n\n`;
+      }
     } else {
-      alertMessage += `📌 <b>Issue Summary:</b>\n${parsed.issue_summary}\n\n`;
+      alertMessage += `📌 <b>Problem:</b>\n${parsed.problem || parsed.issue_summary}\n\n`;
+      if (parsed.details) {
+        alertMessage += `📋 <b>Details:</b>\n${parsed.details}\n\n`;
+      }
+      if (parsed.expected_result) {
+        alertMessage += `🎯 <b>Expected Result:</b>\n${parsed.expected_result}\n\n`;
+      }
+      if (parsed.current_result) {
+        alertMessage += `⚠️ <b>Current Result:</b>\n${parsed.current_result}\n\n`;
+      }
     }
 
+    // Voice Transcriptions if any
     if (parsed.voice_transcriptions && parsed.voice_transcriptions.length > 0) {
       alertMessage += isKhmer ? `📝 <b>អត្ថបទសំឡេង (Voice Transcriptions):</b>\n` : `📝 <b>Voice Transcriptions:</b>\n`;
       parsed.voice_transcriptions.forEach((trans, idx) => {
@@ -452,10 +507,12 @@ async function processUnifiedTicket(sessionKey) {
       alertMessage += `\n`;
     }
 
+    // Original raw text
     if (userTexts) {
-      alertMessage += `💬 <b>សារអក្សរ (Text Content):</b>\n<i>${userTexts}</i>\n\n`;
+      alertMessage += `💬 <b>សារដើម (Original Text):</b>\n<i>${userTexts}</i>\n\n`;
     }
 
+    // Suggested Action for IT
     if (parsed.recommended_action) {
       alertMessage += `💡 <b>ដំណោះស្រាយបឋម (Suggested Action):</b>\n${parsed.recommended_action}\n`;
     }
