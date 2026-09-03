@@ -244,12 +244,9 @@ Return ONLY a valid JSON object matching this schema without markdown code block
   "is_problem": true | false,
   "language": "Khmer" | "English",
   "ocr_text": "Error codes / text found in photos or 'None'",
-  "problem": "Clear and concise description of the issue",
-  "details": "Important information provided by the user (device, software, location, etc.)",
-  "expected_result": "What the user wants to happen",
-  "current_result": "What is happening instead",
+  "issue_summary": "1-2 sentence clear issue summary in the SAME detected language (Khmer if Khmer, English if English)",
   "urgency": "Low" | "Medium" | "High",
-  "recommended_action": "Suggested troubleshooting step for the IT technician",
+  "recommended_action": "Suggested troubleshooting step in the SAME language (Khmer if Khmer, English if English)",
   "casual_reply": "Short polite greeting reply if is_problem is false, otherwise empty"
 }
 `;
@@ -315,12 +312,9 @@ Return ONLY a valid JSON object matching this schema without markdown code block
   "is_problem": true | false,
   "language": "Khmer" | "English",
   "ocr_text": "Error codes / text found in photos or 'None'",
-  "problem": "Clear and concise description of the issue",
-  "details": "Important information provided by the user (device, software, location, etc.)",
-  "expected_result": "What the user wants to happen",
-  "current_result": "What is happening instead",
+  "issue_summary": "1-2 sentence clear issue summary in the SAME detected language (Khmer if Khmer, English if English)",
   "urgency": "Low" | "Medium" | "High",
-  "recommended_action": "Suggested troubleshooting step for the IT technician",
+  "recommended_action": "Suggested troubleshooting step in the SAME language (Khmer if Khmer, English if English)",
   "casual_reply": "Short polite greeting reply if is_problem is false, otherwise empty"
 }
 `;
@@ -479,39 +473,18 @@ async function processUnifiedTicket(sessionKey) {
     if (messageLink) {
       alertMessage += `🔗 <b>Original Message:</b> <a href="${messageLink}">View in Group</a>\n`;
     }
-    alertMessage += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    alertMessage += `━━━━━━━━━━━━━━━━━━━━━\n`;
 
-    // OCR Information from photos if available
     if (parsed.ocr_text && parsed.ocr_text !== 'None' && parsed.ocr_text !== 'គ្មាន') {
       alertMessage += `🔍 <b>Visual Screen OCR / Error:</b>\n<code>${parsed.ocr_text}</code>\n\n`;
     }
 
-    // Structured 4-field reporting format
     if (isKhmer) {
-      alertMessage += `📌 <b>បញ្ហា (Problem):</b>\n${parsed.problem || parsed.issue_summary}\n\n`;
-      if (parsed.details) {
-        alertMessage += `📋 <b>ព័ត៌មានលម្អិត (Details):</b>\n${parsed.details}\n\n`;
-      }
-      if (parsed.expected_result) {
-        alertMessage += `🎯 <b>លទ្ធផលរំពឹងទុក (Expected Result):</b>\n${parsed.expected_result}\n\n`;
-      }
-      if (parsed.current_result) {
-        alertMessage += `⚠️ <b>លទ្ធផលជាក់ស្តែង (Current Result):</b>\n${parsed.current_result}\n\n`;
-      }
+      alertMessage += `📌 <b>សង្ខេបបញ្ហា (Issue Summary):</b>\n${parsed.issue_summary}\n\n`;
     } else {
-      alertMessage += `📌 <b>Problem:</b>\n${parsed.problem || parsed.issue_summary}\n\n`;
-      if (parsed.details) {
-        alertMessage += `📋 <b>Details:</b>\n${parsed.details}\n\n`;
-      }
-      if (parsed.expected_result) {
-        alertMessage += `🎯 <b>Expected Result:</b>\n${parsed.expected_result}\n\n`;
-      }
-      if (parsed.current_result) {
-        alertMessage += `⚠️ <b>Current Result:</b>\n${parsed.current_result}\n\n`;
-      }
+      alertMessage += `📌 <b>Issue Summary:</b>\n${parsed.issue_summary}\n\n`;
     }
 
-    // Voice Transcriptions if any
     if (parsed.voice_transcriptions && parsed.voice_transcriptions.length > 0) {
       alertMessage += isKhmer ? `📝 <b>អត្ថបទសំឡេង (Voice Transcriptions):</b>\n` : `📝 <b>Voice Transcriptions:</b>\n`;
       parsed.voice_transcriptions.forEach((trans, idx) => {
@@ -520,12 +493,10 @@ async function processUnifiedTicket(sessionKey) {
       alertMessage += `\n`;
     }
 
-    // Original raw text
     if (userTexts) {
-      alertMessage += `💬 <b>សារដើម (Original Text):</b>\n<i>${userTexts}</i>\n\n`;
+      alertMessage += `💬 <b>សារអក្សរ (Text Content):</b>\n<i>${userTexts}</i>\n\n`;
     }
 
-    // Suggested Action for IT
     if (parsed.recommended_action) {
       alertMessage += `💡 <b>ដំណោះស្រាយបឋម (Suggested Action):</b>\n${parsed.recommended_action}\n`;
     }
