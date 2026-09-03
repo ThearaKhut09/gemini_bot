@@ -631,6 +631,7 @@ bot.on('photo', (ctx) => {
   }
 });
 
+// 3. Text Messages
 bot.on('text', (ctx) => {
   const chat = ctx.chat;
   const userText = (ctx.message.text || '').trim();
@@ -643,6 +644,92 @@ bot.on('text', (ctx) => {
     type: 'text',
     text: userText
   });
+});
+
+// 4. Anti-Scam & Dangerous File Protection (Documents)
+const DANGEROUS_EXTENSIONS = new Set([
+  'exe', 'bat', 'cmd', 'ps1', 'vbs', 'scr', 'msi', 'apk', 'com', 'pif', 'lnk',
+  'zip', 'rar', '7z', 'iso', 'tar', 'gz', 'docm', 'xlsm', 'wsf', 'hta', 'jar'
+]);
+
+function formatBytes(bytes) {
+  if (!bytes || bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+}
+
+bot.on('document', async (ctx) => {
+  const chat = ctx.chat;
+  const document = ctx.message.document;
+  const fromUser = ctx.from;
+  const fileName = document.file_name || 'unnamed_file';
+  const fileSize = document.file_size || 0;
+  const fileExt = fileName.split('.').pop().toLowerCase();
+  const { fullName, username, id: userId } = formatUserInfo(fromUser);
+  const groupTitle = chat.title || (chat.type === 'private' ? 'Private Message' : 'Group Chat');
+
+  // Check if file extension is in dangerous blacklist
+  if (DANGEROUS_EXTENSIONS.has(fileExt)) {
+    console.warn(`🚨 BLOCKED DANGEROUS FILE: "${fileName}" from [${fullName}] in [${groupTitle}]`);
+
+    // 1. Delete malicious message immediately from group
+    try {
+      await ctx.deleteMessage();
+      console.log(`🗑️ Dangerous file message deleted successfully.`);
+    } catch (delErr) {
+      console.error('Could not delete message (ensure bot is Admin with Delete Messages permission):', delErr.message);
+    }
+
+    // 2. Warn user in group
+    try {
+      const warningMsg = `⚠️ <b>ការព្រមានសុវត្ថិភាព (Security Warning)</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━\n` +
+        `👤 <b>${fullName}</b>, ការផ្ញើឯកសារប្រភេទ <code>.${fileExt}</code> ត្រូវបានហាមឃាត់ដើម្បីការពារមេរោគ និង Scam។\n` +
+        `🚫 <i>ឯកសារត្រូវបានលុបចេញដោយស្វ័យប្រវត្តិ។</i>`;
+      await ctx.reply(warningMsg, { parse_mode: 'HTML' });
+    } catch (warnErr) { }
+
+    // 3. Dispatch High-Priority Security Alert to IT Support Group
+    const timestamp = new Date().toLocaleString('en-US', {
+      timeZone: 'Asia/Phnom_Penh',
+      dateStyle: 'medium',
+      timeStyle: 'medium'
+    });
+
+    let securityAlert = `🛡️ <b>SECURITY ALERT: DANGEROUS FILE BLOCKED</b>\n`;
+    securityAlert += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    securityAlert += `👤 <b>Sender:</b> ${fullName} (${username})\n`;
+    securityAlert += `🆔 <b>User ID:</b> <code>${userId}</code>\n`;
+    securityAlert += `🏢 <b>Source:</b> ${groupTitle}\n`;
+    securityAlert += `📁 <b>File Name:</b> <code>${fileName}</code>\n`;
+    securityAlert += `⚠️ <b>Detected Extension:</b> <code>.${fileExt}</code>\n`;
+    securityAlert += `📦 <b>File Size:</b> ${formatBytes(fileSize)}\n`;
+    securityAlert += `📅 <b>Time:</b> ${timestamp} (GMT+7)\n`;
+    securityAlert += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    securityAlert += `🚫 <b>Status:</b> Dangerous message automatically deleted to protect employees.\n`;
+    securityAlert += `━━━━━━━━━━━━━━━━━━━━━`;
+
+    await sendToITGroup(securityAlert);
+    return;
+  }
+
+  // If document is an uncompressed image (e.g. image/png, image/jpeg), buffer as photo
+  if (document.mime_type && document.mime_type.startsWith('image/')) {
+    bufferUserReport(ctx, {
+      type: 'photo',
+      fileId: document.file_id,
+      caption: ctx.message.caption || ''
+    });
+
+    if (ctx.message.caption) {
+      bufferUserReport(ctx, {
+        type: 'text',
+        text: ctx.message.caption
+      });
+    }
+  }
 });
 
 bot.catch((err, ctx) => {
