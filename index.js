@@ -537,11 +537,14 @@ bot.command('urgent', (ctx) => {
 });
 
 bot.command('contact', (ctx) => {
+  const itUsername = process.env.IT_SUPPORT_USERNAME || '@ThearaKhut_1';
+
   const contactText = `📞 <b>ទំនាក់ទំនងក្រុមការងារ IT (IT Support Contact)</b>\n` +
     `━━━━━━━━━━━━━━━━━━━━━\n` +
     `🕒 <b>ម៉ោងធ្វើការ (Working Hours):</b>\n` +
     `• ច័ន្ទ - សុក្រ (Mon - Fri): 8:00 AM - 5:00 PM\n` +
     `• សៅរ៍ (Sat): 8:00 AM - 3:00 PM\n\n` +
+    `✈️ <b>Telegram:</b> ${itUsername}\n` +
     `📧 <b>Email:</b> itsupport@company.com\n` +
     `🏢 <b>Office:</b> IT Department (Floor 1)`;
 
