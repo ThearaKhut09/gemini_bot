@@ -541,9 +541,9 @@ bot.command('contact', (ctx) => {
     `━━━━━━━━━━━━━━━━━━━━━\n` +
     `🕒 <b>ម៉ោងធ្វើការ (Working Hours):</b>\n` +
     `• ច័ន្ទ - សុក្រ (Mon - Fri): 8:00 AM - 5:00 PM\n` +
-    `• សៅរ៍ (Sat): 8:00 AM - 12:00 PM\n\n` +
+    `• សៅរ៍ (Sat): 8:00 AM - 3:00 PM\n\n` +
     `📧 <b>Email:</b> itsupport@company.com\n` +
-    `🏢 <b>Office:</b> IT Department (Floor 2)`;
+    `🏢 <b>Office:</b> IT Department (Floor 1)`;
 
   ctx.reply(contactText, { parse_mode: 'HTML' });
 });
