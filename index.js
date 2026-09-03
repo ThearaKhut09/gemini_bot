@@ -436,11 +436,24 @@ async function processUnifiedTicket(sessionKey) {
 
     console.log(`✅ AI Processing Complete (${parsed.engineUsed}):`, parsed);
 
-    // 1. If user sent only casual greetings or non-problem messages -> Skip creating IT ticket
+    // 1. If user sent only casual greetings or non-problem messages -> Reply directly in group/chat and skip IT ticket
     if (parsed.is_problem === false) {
-      console.log(`ℹ️ [${fullName}] sent a non-problem message (casual/greeting). Skipping IT ticket creation.`);
-      if (chat.type === 'private' && parsed.casual_reply) {
-        await bot.telegram.sendMessage(chat.id, parsed.casual_reply);
+      console.log(`ℹ️ [${fullName}] sent a casual/non-problem message. Replying in source chat without creating IT ticket.`);
+
+      const isKhmer = (parsed.language || '').toLowerCase().includes('khmer');
+      const defaultReply = isKhmer
+        ? `👋 សួស្តី <b>${fullName}</b>! តើខ្ញុំអាចជួយអ្វីអ្នកទាក់ទងនឹងបច្ចេកទេស/IT ដែរឬទេ? 😊\n\n👉 <i>អ្នកអាចផ្ញើសារជាសំឡេង 🎙️ រូបភាព 📸 ឬអក្សរ 💬 ដើម្បីរាយការណ៍បញ្ហាបានភ្លាមៗ។</i>`
+        : `👋 Hello <b>${fullName}</b>! How can I help you with your IT needs today? 😊\n\n👉 <i>Feel free to send a voice note 🎙️, photo 📸, or text 💬 to report an issue.</i>`;
+
+      const replyText = parsed.casual_reply ? `👋 ${parsed.casual_reply}` : defaultReply;
+
+      try {
+        await bot.telegram.sendMessage(chat.id, replyText, {
+          parse_mode: 'HTML',
+          reply_parameters: { message_id: firstMessageId }
+        });
+      } catch (replyErr) {
+        await bot.telegram.sendMessage(chat.id, replyText, { parse_mode: 'HTML' }).catch(() => { });
       }
       return;
     }
