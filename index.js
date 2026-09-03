@@ -556,7 +556,7 @@ bot.command('contact', (ctx) => {
     `• ច័ន្ទ - សុក្រ (Mon - Fri): 8:00 AM - 5:00 PM\n` +
     `• សៅរ៍ (Sat): 8:00 AM - 3:00 PM\n\n` +
     `${telegramLines}\n\n` +
-    `📧 <b>Email:</b> itsupport@company.com\n` +
+    `📧 <b>Email:</b> itsupport.cam@leesfood.com\n` +
     `🏢 <b>Office:</b> IT Department (Floor 1)`;
 
   ctx.reply(contactText, { parse_mode: 'HTML' });
