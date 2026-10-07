@@ -3,8 +3,10 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import crypto from 'crypto';
 import axios from 'axios';
 import express from 'express';
+import multer from 'multer';
 import { Telegraf } from 'telegraf';
 import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -66,6 +68,148 @@ app.get('/', (req, res) => {
 });
 
 app.get('/health', (req, res) => res.status(200).send('OK'));
+
+// ==========================================
+// 3.5 Telegram Mini App (report an issue without typing in the group)
+// ==========================================
+const MINIAPP_URL = process.env.MINIAPP_URL || '';
+const TICKETS_FILE = path.join(__dirname, 'data', 'tickets.json');
+fs.mkdirSync(path.dirname(TICKETS_FILE), { recursive: true });
+
+app.use('/app', express.static(path.join(__dirname, 'miniapp')));
+
+function validateInitData(initData, botToken, maxAgeSec = 86400) {
+  const params = new URLSearchParams(initData);
+  const hash = params.get('hash');
+  if (!hash) return null;
+  params.delete('hash');
+
+  const dataCheckString = [...params.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${k}=${v}`)
+    .join('\n');
+
+  const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
+  if (crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex') !== hash) return null;
+
+  const authAge = Date.now() / 1000 - Number(params.get('auth_date') || 0);
+  if (authAge > maxAgeSec) return null;
+
+  try {
+    return JSON.parse(params.get('user') || 'null');
+  } catch {
+    return null;
+  }
+}
+
+function resolveMiniAppUser(initData) {
+  // Dev only: lets the form be tested in a plain browser. Blocked when NODE_ENV=production.
+  if (initData === 'DEV_FAKE_USER' && process.env.MINIAPP_DEV_MODE === '1' && process.env.NODE_ENV !== 'production') {
+    return { id: 900000001, first_name: 'Dev', last_name: 'Tester', username: 'dev_tester' };
+  }
+  return validateInitData(initData, BOT_TOKEN);
+}
+
+app.use('/api', (req, res, next) => {
+  const user = resolveMiniAppUser(req.get('X-Init-Data') || '');
+  if (!user) return res.status(401).json({ ok: false, error: 'unauthorized' });
+  req.tgUser = user;
+  next();
+});
+
+function loadTickets() {
+  try {
+    return JSON.parse(fs.readFileSync(TICKETS_FILE, 'utf8'));
+  } catch {
+    return [];
+  }
+}
+
+function saveTickets(tickets) {
+  fs.writeFileSync(TICKETS_FILE, JSON.stringify(tickets, null, 2));
+}
+
+const miniAppUpload = multer({
+  storage: multer.diskStorage({
+    destination: os.tmpdir(),
+    filename: (_req, file, cb) => cb(null, `miniapp_${Date.now()}_${Math.random().toString(36).slice(2)}${(path.extname(file.originalname || '') || '.jpg').toLowerCase()}`)
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => cb(null, /^image\//.test(file.mimetype))
+});
+
+app.post('/api/tickets', miniAppUpload.single('photo'), async (req, res) => {
+  const issue = (req.body.issue || '').trim().slice(0, 3000);
+  const urgencyInput = ['Low', 'Medium', 'High'].includes(req.body.urgency) ? req.body.urgency : 'Medium';
+
+  if (!issue) {
+    return res.status(400).json({ ok: false, error: 'Issue description is required' });
+  }
+
+  const { fullName, username, id: userId } = formatUserInfo(req.tgUser);
+  const timestamp = new Date().toLocaleString('en-US', {
+    timeZone: 'Asia/Phnom_Penh',
+    dateStyle: 'medium',
+    timeStyle: 'medium'
+  });
+
+  let alertMessage = `🚨 <b>NEW IT SUPPORT TICKET (Mini App)</b>\n`;
+  alertMessage += `━━━━━━━━━━━━━━━━━━━━━\n`;
+  alertMessage += `👤 <b>Reporter:</b> ${escapeHtml(fullName)} (${escapeHtml(username)})\n`;
+  alertMessage += `🆔 <b>User ID:</b> <code>${userId}</code>\n`;
+  alertMessage += `📱 <b>Source:</b> Telegram Mini App\n`;
+  alertMessage += `${urgencyInput === 'High' ? '🔴' : urgencyInput === 'Medium' ? '🟡' : '🟢'} <b>Urgency:</b> <b>${urgencyInput}</b>\n`;
+  alertMessage += `📅 <b>Time:</b> ${timestamp} (GMT+7)\n`;
+  alertMessage += `━━━━━━━━━━━━━━━━━━━━━\n`;
+  alertMessage += `📌 <b>Issue:</b>\n${escapeHtml(issue)}\n`;
+  alertMessage += `━━━━━━━━━━━━━━━━━━━━━`;
+
+  const photoPath = req.file ? req.file.path : null;
+
+  try {
+    await sendToITGroup(alertMessage, photoPath ? [photoPath] : []);
+  } catch (err) {
+    console.error('❌ Mini App ticket delivery failed:', err.message || err);
+    return res.status(502).json({ ok: false, error: 'Could not deliver ticket to IT' });
+  } finally {
+    if (photoPath) fs.promises.unlink(photoPath).catch(() => { });
+  }
+
+  const tickets = loadTickets();
+  const ticket = {
+    id: `MA-${Date.now().toString(36).toUpperCase()}`,
+    userId,
+    fullName,
+    username,
+    issue,
+    urgency: urgencyInput,
+    createdAt: new Date().toISOString()
+  };
+  tickets.push(ticket);
+  saveTickets(tickets);
+
+  console.log(`🚀 Mini App ticket ${ticket.id} from [${fullName}] forwarded to IT Group`);
+  res.json({ ok: true, id: ticket.id });
+});
+
+app.get('/api/tickets', (req, res) => {
+  const tickets = loadTickets()
+    .filter(t => t.userId === req.tgUser.id)
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, 20)
+    .map(t => ({
+      id: t.id,
+      issue: t.issue,
+      urgency: t.urgency,
+      urgencyEmoji: t.urgency === 'High' ? '🔴' : t.urgency === 'Medium' ? '🟡' : '🟢',
+      timeText: new Date(t.createdAt).toLocaleString('en-US', {
+        timeZone: 'Asia/Phnom_Penh',
+        dateStyle: 'medium',
+        timeStyle: 'short'
+      })
+    }));
+  res.json({ ok: true, tickets });
+});
 
 const server = app.listen(PORT, () => {
   console.log(`🌐 Health check server running on port ${PORT}`);
@@ -152,14 +296,20 @@ async function sendToITGroup(alertMessage, photos = []) {
   async function executeSend(targetId) {
     if (photos.length > 0) {
       try {
-        const mediaGroup = photos.map((filePath, idx) => ({
-          type: 'photo',
-          media: { source: filePath },
-          caption: idx === 0 ? '📸 Attached issue screenshot(s)' : undefined
-        }));
-        await bot.telegram.sendMediaGroup(targetId, mediaGroup);
+        if (photos.length === 1) {
+          await bot.telegram.sendPhoto(targetId, { source: photos[0] }, {
+            caption: '📸 Attached issue screenshot(s)'
+          });
+        } else {
+          const mediaGroup = photos.map((filePath, idx) => ({
+            type: 'photo',
+            media: { source: filePath },
+            caption: idx === 0 ? '📸 Attached issue screenshot(s)' : undefined
+          }));
+          await bot.telegram.sendMediaGroup(targetId, mediaGroup);
+        }
       } catch (mediaErr) {
-        console.warn('Could not send media group to IT group:', mediaErr.message);
+        console.warn('Could not send photo(s) to IT group:', mediaErr.message);
       }
     }
 
@@ -566,6 +716,8 @@ bot.start((ctx) => {
     ]
   };
 
+  if (MINIAPP_URL) keyboard.inline_keyboard.push([{ text: '📱 បើកកម្មវិធី (Open App)', web_app: { url: MINIAPP_URL } }]);
+
   ctx.reply(welcomeText, { parse_mode: 'HTML', reply_markup: keyboard });
 });
 
@@ -593,6 +745,8 @@ bot.command('help', (ctx) => {
       ]
     ]
   };
+
+  if (MINIAPP_URL) keyboard.inline_keyboard.push([{ text: '📱 បើកកម្មវិធី (Open App)', web_app: { url: MINIAPP_URL } }]);
 
   ctx.reply(helpText, { parse_mode: 'HTML', reply_markup: keyboard });
 });
@@ -726,6 +880,18 @@ bot.command('getid', (ctx) => {
   console.log(`📌 Chat ID for "${chatTitle}": ${chatId}`);
   ctx.reply(`ℹ️ <b>Chat Details:</b>\n• <b>Title:</b> ${escapeHtml(chatTitle)}\n• <b>Type:</b> ${chatType}\n• <b>Chat ID:</b> <code>${chatId}</code>\n\n<i>Copy this Chat ID into your .env for IT_GROUP_ID</i>`, {
     parse_mode: 'HTML'
+  });
+});
+
+bot.command('app', (ctx) => {
+  if (!MINIAPP_URL) {
+    return ctx.reply('ℹ️ Mini App is not configured yet. Set <code>MINIAPP_URL</code> in .env and restart.', { parse_mode: 'HTML' });
+  }
+  ctx.reply('📱 <b>IT Support Mini App</b>\nបើកកម្មវិធីដើម្បីរាយការណ៍បញ្ហាដោយផ្ទាល់ (report an issue without typing in the group):', {
+    parse_mode: 'HTML',
+    reply_markup: {
+      inline_keyboard: [[{ text: '🛠️ Open IT App', web_app: { url: MINIAPP_URL } }]]
+    }
   });
 });
 

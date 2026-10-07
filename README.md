@@ -26,3 +26,19 @@ PORT=3000
 cd gemini_bot
 npm run dev
 ```
+
+---
+
+## 📱 Telegram Mini App
+
+An optional web app served by the same process at `/app` — employees can report IT issues
+with a form (text + urgency + photo) instead of typing in the group. Tickets arrive in the
+IT group in the same format as group reports.
+
+- **Page:** `http://localhost:3000/app` (served by the bot's Express server)
+- **API:** `POST /api/tickets`, `GET /api/tickets` — authenticated via Telegram `initData`
+- **Setup:** set `MINIAPP_URL` in `.env` (must be HTTPS — use a tunnel like `ngrok`/`cloudflared`
+  for local testing), then register the URL in @BotFather via `/newapp` or `/setmenubutton`
+- **Dev mode:** set `MINIAPP_DEV_MODE=1` (and keep `NODE_ENV` unset) to test the form in a
+  normal browser as a fake user. **Never enable in production.**
+- Tickets are stored locally in `data/tickets.json` (git-ignored).
