@@ -58,7 +58,46 @@ IT Support Group receives ONE structured ticket
 2. The bot **deletes it immediately**, posts a Khmer warning in the group, and sends a security alert to IT (who sent it, what file, when).
 3. No AI is involved — this protection runs even if the AI service is down.
 
-### 2.2 What happens after the ticket
+### 2.2 How employees use it (step by step)
+
+**A. Reporting in the Telegram group**
+
+1. Open the company IT support group in Telegram.
+2. Send your problem in whichever way is easiest:
+   - 🎙️ **Voice note** — hold the microphone and speak (Khmer or English)
+   - 📸 **Photo** — snap the error screen and send it
+   - 💬 **Text** — just type it
+   - You can combine them: send the voice, then the photo, then more details — the bot waits 8 seconds and merges them into **one** report.
+3. The bot reacts with ✍️ so you know it heard you.
+4. That's all — the ticket arrives at the IT support group automatically. If the message was just a greeting, the bot answers politely and no ticket is made.
+5. **Urgent problem?** Start your message with the word **"URGENT"** or **"បន្ទាន់"** → it is marked 🔴 High priority for IT.
+
+**B. Reporting through the Mini App**
+
+1. Open the app — any of these ways:
+   - In the **bot's private chat**: tap the **🛠️ Open IT App** button next to the text input
+   - In a **group**: tap the pinned message bar (top of chat) → **🛠️ Open IT App**, or the **📎** paperclip menu (mobile), or type **/app**
+2. Fill the short form:
+   - 📝 Describe the issue (Khmer or English)
+   - ⚡ Pick the urgency: 🟢 ធម្មតា / 🟡 មធ្យម / 🔴 បន្ទាន់
+   - 📸 Optionally attach a photo of the error
+3. Tap **🚀 Submit** → you immediately see "✅ sent".
+4. Your past reports are listed under **"My recent tickets"** in the app.
+5. The IT team receives the ticket right away and will follow up with you.
+
+**C. Bot commands (type anywhere, or tap the / button)**
+
+| Command | What it does |
+|---|---|
+| `/start` | Opens the bot menu with all buttons |
+| `/report` | Shows how to write a good report (device, issue, photo, location) |
+| `/urgent` | Guide for urgent (system-down) problems |
+| `/app` | Sends the Open App button (auto-pins it in groups) |
+| `/status` | Shows whether the bot is running |
+| `/contact` | IT team working hours, usernames, email |
+| `/help` | Full usage guide |
+
+### 2.3 What happens after the ticket
 
 The bot's job ends at delivery. The IT team reads the ticket in the IT group and handles the problem as usual — nothing is automated beyond that, so existing IT workflows stay unchanged.
 
