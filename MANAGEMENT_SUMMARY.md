@@ -163,7 +163,7 @@ What paid storage buys is not space (it will never fill up at this volume) — i
 **Recommended option for us:** **Supabase** — one service provides both the database (ticket records) and file storage (voice/photo copies), linked by ticket ID. Free-tier limits: 500 MB database, 1 GB file storage, 5 GB bandwidth/month, 7-day snapshot backups; the project pauses only if unused for a full week (never happens with daily tickets). At ~50 reports/day with a voice + photo each, data grows ~65 MB/**day**, so the plan is:
 
 - **Database (text records + transcriptions): always stored** — 500 MB holds hundreds of thousands of tickets, i.e. years of history on the free tier.
-- **File copies (voice/photos): optional** — the originals already live permanently in the IT group on Telegram. If we also archive copies, either auto-delete them after 30–60 days (fits the free tier forever) or take Supabase Pro (100 GB ≈ 4+ years of files, ~$25/month).
+- **File copies (voice/photos): optional** — the originals already live permanently in the IT group on Telegram. If we also archive copies outside Telegram, **Cloudflare R2 gives 10 GB free** (≈5 months of files at peak volume); beyond that, R2's price is ~$0.015/GB, so keeping every file forever costs roughly **$0.03/month — under $0.50/year**. Supabase Pro (100 GB, ~$25/month) remains the all-in-one alternative.
 
 ## 5. Costs
 
