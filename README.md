@@ -42,3 +42,17 @@ IT group in the same format as group reports.
 - **Dev mode:** set `MINIAPP_DEV_MODE=1` (and keep `NODE_ENV` unset) to test the form in a
   normal browser as a fake user. **Never enable in production.**
 - Tickets are stored locally in `data/tickets.json` (git-ignored).
+
+---
+
+## ☁️ Deploy to Render (free)
+
+The repo includes a [render.yaml](render.yaml) blueprint that deploys the bot + mini app as one web service.
+
+1. `git push` so GitHub has the latest code.
+2. [render.com](https://render.com) → sign in with GitHub → **New + → Blueprint** → select this repo.
+3. Fill in the prompted values (copy from your local `.env`): `BOT_TOKEN`, `GEMINI_API_KEY`, `IT_GROUP_ID`, `MONITORED_GROUP_ID`, `IT_SUPPORT_USERNAME`. Leave `OPENAI_API_KEY` empty if unused, and **never set `MINIAPP_DEV_MODE`**.
+4. After deploy, set `MINIAPP_URL` to `https://<your-service>.onrender.com/app` (Environment tab — the service restarts automatically), then register that URL in @BotFather via `/newapp` or `/setmenubutton`.
+5. Keep-alive: the free plan sleeps after 15 min without HTTP traffic. Add a free [UptimeRobot](https://uptimerobot.com) monitor pinging `https://<your-service>.onrender.com/health` every 5 minutes.
+
+Notes: the free plan gives ~750 instance-hours/month (enough for one always-on service); the disk is ephemeral so `data/tickets.json` resets on restart/redeploy; every `git push` auto-deploys.

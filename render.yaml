@@ -1,0 +1,37 @@
+# Render Blueprint: deploys the bot + mini app as one free web service.
+# Deploy via Render dashboard → New + → Blueprint → pick this repo,
+# then fill in the values marked "sync: false" (copy them from your local .env).
+services:
+  - type: web
+    name: gemini-it-bot
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      # Blocks the mini app dev-mode fake user on the server. Do not remove.
+      - key: NODE_ENV
+        value: production
+      - key: BOT_TOKEN
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: AI_PROVIDER
+        value: auto
+      - key: IT_GROUP_ID
+        sync: false
+      - key: MONITORED_GROUP_ID
+        sync: false
+      - key: IT_SUPPORT_USERNAME
+        sync: false
+      # Set after first deploy: https://<your-service>.onrender.com/app
+      - key: MINIAPP_URL
+        sync: false
+      # NEVER set MINIAPP_DEV_MODE on Render.
