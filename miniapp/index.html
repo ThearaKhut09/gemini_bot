@@ -180,9 +180,8 @@
         <button type="button" class="photo-btn" id="openCameraBtn">📷 ថតរូប<span style="font-size:11px;opacity:.7">Camera</span></button>
         <label class="photo-btn" for="galleryInput">🖼️ ជ្រើសរើស<span style="font-size:11px;opacity:.7">Gallery</span></label>
       </div>
+      <div id="androidTip" class="hint" style="display:none; margin-top:8px;">💡 ចំណុច៖ ថតរូបដោយកាមេរ៉ាទូរស័ព្ទជាមុន រួចចុច 🖼️ ជ្រើសរើស ដើម្បីភ្ជាប់។</div>
       <input type="file" id="galleryInput" accept="image/*" style="display:none">
-      <!-- Fallback for devices/browsers that block in-page camera access -->
-      <input type="file" id="cameraFallbackInput" accept="image/*" capture="environment" style="display:none">
       <div class="photo-preview" id="photoPreview">
         <img id="photoThumb" alt="photo">
         <div class="meta">
@@ -212,9 +211,10 @@
     <video id="cameraVideo" autoplay playsinline muted></video>
     <div id="cameraLoading" class="camera-loading" style="display:none">⏳ កំពុងបើកកាមេរ៉ា...</div>
     <div id="cameraHint" class="camera-hint" style="display:none">
-      ⚠️ កាមេរ៉ាមិនបានបង្ហាញរូបភាព (camera feed not showing)
+      ⚠️ កាមេរ៉ាមិនអាចបើកបានទេ (camera unavailable)
+      <br>សូមថតរូបដោយកាមេរ៉ាទូរស័ព្ទរបស់អ្នកជាមុន រួចភ្ជាប់តាមប៊ូតុងខាងក្រោម៖
       <br>
-      <button type="button" id="hintSystemBtn">📷 បើកកាមេរ៉ាប្រព័ន្ធ (Open system camera)</button>
+      <button type="button" id="hintSystemBtn">🖼️ ជ្រើសរើសរូបភាព (Choose photo)</button>
     </div>
     <button type="button" id="cameraClose">✕</button>
     <div class="camera-bar">
@@ -250,7 +250,6 @@
   });
 
   const galleryInput = document.getElementById('galleryInput');
-  const cameraFallbackInput = document.getElementById('cameraFallbackInput');
   const photoPreview = document.getElementById('photoPreview');
   let photoFile = null;
 
@@ -265,11 +264,9 @@
     }
   }
   galleryInput.addEventListener('change', function () { setPhotoFile(galleryInput.files[0] || null); });
-  cameraFallbackInput.addEventListener('change', function () { setPhotoFile(cameraFallbackInput.files[0] || null); });
 
   document.getElementById('removePhoto').addEventListener('click', function () {
     galleryInput.value = '';
-    cameraFallbackInput.value = '';
     setPhotoFile(null);
   });
 
@@ -281,12 +278,15 @@
   const cameraModal = document.getElementById('cameraModal');
   const cameraVideo = document.getElementById('cameraVideo');
   const IS_ANDROID = /android/i.test(navigator.userAgent || '');
+  if (IS_ANDROID) { document.getElementById('androidTip').style.display = 'block'; }
 
   function showCameraHint() { document.getElementById('cameraHint').style.display = 'block'; }
   function hideCameraHint() { document.getElementById('cameraHint').style.display = 'none'; }
   function showCameraLoading() { document.getElementById('cameraLoading').style.display = 'flex'; }
   function hideCameraLoading() { document.getElementById('cameraLoading').style.display = 'none'; }
-  function openSystemCamera() { stopCamera(); cameraFallbackInput.click(); }
+  // Telegram Android ignores the capture hint on file inputs, so the only reliable
+  // fallback there is the gallery picker (accept="image/*" opens Telegram's picker).
+  function openGalleryPicker() { stopCamera(); galleryInput.click(); }
 
   function stopCamera() {
     clearTimeout(cameraWatchdog);
@@ -301,22 +301,19 @@
   }
 
   async function openCamera() {
-    // Android: camera init inside Telegram's WebView is very slow/unreliable —
-    // the native camera app opens instantly and always works, so use it directly.
-    if (IS_ANDROID) {
-      cameraFallbackInput.click();
-      return;
-    }
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       cameraModal.classList.add('open');
       showCameraLoading();
       let lateStream = null;
       try {
-        const stream = await Promise.race([
-          navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } },
-            audio: false
-          }).then(function (s) { lateStream = s; return s; }),
+        const request = navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false
+        }).then(function (s) { lateStream = s; return s; });
+        // Desktop can hang on a permission prompt — cap the wait there.
+        // Android is slow to init but does start, so give it all the time it needs.
+        const stream = IS_ANDROID ? await request : await Promise.race([
+          request,
           new Promise(function (_, reject) {
             cameraStartTimeout = setTimeout(function () { reject(new Error('camera timeout')); }, 8000);
           })
@@ -326,23 +323,23 @@
         cameraVideo.srcObject = stream;
         cameraVideo.muted = true;
         try { await cameraVideo.play(); } catch (e) { }
-        hideCameraLoading();
-        hideCameraHint();
         cameraWatchdog = setTimeout(function () {
+          // hide the loading overlay even if 'playing' never fires
+          hideCameraLoading();
           if (cameraVideo.readyState < 2 || cameraVideo.paused || cameraVideo.videoWidth === 0) {
             showCameraHint();
           }
         }, 3000);
         return;
       } catch (e) {
-        // timed out or denied: release anything the late promise produced
+        // denied or timed out: release anything the late promise produced
         if (lateStream) { lateStream.getTracks().forEach(function (t) { t.stop(); }); }
         stopCamera();
-        cameraFallbackInput.click();
+        galleryInput.click();
         return;
       }
     }
-    cameraFallbackInput.click();
+    galleryInput.click();
   }
 
   cameraVideo.addEventListener('playing', function () {
@@ -350,11 +347,12 @@
     hideCameraLoading();
     hideCameraHint();
   });
+  cameraVideo.addEventListener('loadeddata', hideCameraLoading);
   // If autoplay is blocked by the WebView, one tap on the viewfinder starts the feed
   cameraVideo.addEventListener('click', function () {
     if (cameraStream) { cameraVideo.play().catch(function () { }); }
   });
-  document.getElementById('hintSystemBtn').addEventListener('click', openSystemCamera);
+  document.getElementById('hintSystemBtn').addEventListener('click', openGalleryPicker);
 
   document.getElementById('openCameraBtn').addEventListener('click', openCamera);
   document.getElementById('cameraClose').addEventListener('click', stopCamera);
@@ -432,7 +430,6 @@
       issueField.value = '';
       document.getElementById('counter').textContent = '0/3000';
       galleryInput.value = '';
-      cameraFallbackInput.value = '';
       setPhotoFile(null);
     } catch (e) {
       alert('ផ្ញើមិនបានសម្រេច សូមព្យាយាមម្តងទៀត។ (Submission failed, please try again)');
