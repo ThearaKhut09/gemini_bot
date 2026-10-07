@@ -908,10 +908,18 @@ bot.command('app', async (ctx) => {
     text += '\n\n👉 បើក private chat ជាមួយ bot រួចចុចប៊ូតុង 🛠️ <b>Open IT App</b> នៅខាងក្រោម។';
   }
 
-  await ctx.reply(text, {
-    parse_mode: 'HTML',
-    reply_markup: miniRow ? { inline_keyboard: [miniRow] } : undefined
-  }).catch((e) => console.error('❌ /app reply failed:', e.message));
+  try {
+    const sent = await ctx.reply(text, {
+      parse_mode: 'HTML',
+      reply_markup: miniRow ? { inline_keyboard: [miniRow] } : undefined
+    });
+    // In groups, pin the app message so every member always has the button one tap away
+    if (ctx.chat.type !== 'private' && miniRow && sent) {
+      await ctx.pinChatMessage(sent.message_id, { disable_notification: true }).catch(() => { });
+    }
+  } catch (e) {
+    console.error('❌ /app reply failed:', e.message);
+  }
 });
 
 // ----------------------------------------------------
