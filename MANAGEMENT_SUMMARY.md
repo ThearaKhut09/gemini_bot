@@ -85,7 +85,32 @@ The bot's job ends at delivery. The IT team reads the ticket in the IT group and
 
 **Summary:** the system deliberately stores **almost nothing itself** — reports live in Telegram (which the company already uses), and only the small Mini App ticket list sits on the server temporarily. The AI providers receive the content **once, to process it**, under their API terms.
 
-**Reusing the data later (if wanted):** today there is no database, so there is no ticket history, statistics, or SLA reporting. The system is designed so a small database can be added later (free options exist) to keep every ticket permanently and produce monthly reports (e.g., number of tickets per department, common problems, response times). This is an extension, not a rebuild.
+### 4.1 Optional extension: permanent storage, backup and reuse
+
+Today no database exists (by design — simplest and cheapest). If the company wants to keep every ticket permanently, a **small database can be added without rebuilding anything** — the bot already sends every ticket through one central point, so saving a copy there is a small change.
+
+**What would be stored (one record per ticket):**
+
+- Ticket ID, date & time, reporter, source (group or Mini App)
+- Urgency level, issue summary, original transcription/text
+- Status (open / resolved) and resolution notes filled by IT
+
+**Where it would live:** a small managed cloud database (free tiers — e.g. Supabase, Turso — are enough for **years** of tickets) or a folder on the company's own server if preferred.
+
+**Backup:** yes, easily.
+
+- Daily automated backups (built into managed database services), plus manual export to **CSV/Excel at any time**
+- The company owns the data outright — it can be moved to another provider or server whenever wanted (standard formats, no lock-in)
+- A retention rule can be set (e.g. keep 12 months, then archive or delete) to match company policy
+
+**How the stored data can be reused:**
+
+1. **Ticket history** — employees see their past reports with real status (open/resolved) in the Mini App; IT sees the full history of any device or user.
+2. **Monthly IT statistics** — number of tickets, breakdown by urgency, common problem types, busiest days, average resolution time — useful for management reporting and planning.
+3. **Faster solutions** — when a new ticket matches a previously solved one, the AI can suggest the earlier solution to IT (a growing knowledge base built from the company's own history).
+4. **Audit trail** — a verified record of what was reported, when, by whom, and how it was resolved.
+
+**Cost of this extension:** $0 to start (free database tiers); only relevant upgrade is a paid database tier if volume grows, roughly $0–10/month.
 
 ## 5. Costs
 
@@ -103,6 +128,6 @@ The bot's job ends at delivery. The IT team reads the ticket in the IT group and
 
 1. **Custom domain** for the Mini App (professional appearance, stable URL).
 2. **Decide the AI data policy** — if reports may contain sensitive business information, use the paid Gemini tier (data not used for training) or a self-hosted model later.
-3. **Add a small database** to keep permanent ticket history and enable monthly IT statistics.
+3. **Add a small database** to keep permanent ticket history and enable monthly IT statistics (see section 4.1 — backup, export, and reuse options).
 4. **Control group membership** — the bot reports from whatever group it monitors; manage who is in that group like any company channel.
 5. **Back up the bot configuration** (the environment variables) — the whole system can be restored on any server in minutes from the Git repository.
