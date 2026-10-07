@@ -86,6 +86,7 @@ function miniAppButtonRow(chat) {
   return MINIAPP_TG_LINK ? [{ text: '🛠️ Open IT App', url: MINIAPP_TG_LINK }] : null;
 }
 const TICKETS_FILE = path.join(__dirname, 'data', 'tickets.json');
+const APP_PINS_FILE = path.join(__dirname, 'data', 'appPins.json');
 fs.mkdirSync(path.dirname(TICKETS_FILE), { recursive: true });
 
 app.use('/app', express.static(path.join(__dirname, 'miniapp')));
@@ -139,6 +140,42 @@ function loadTickets() {
 
 function saveTickets(tickets) {
   fs.writeFileSync(TICKETS_FILE, JSON.stringify(tickets, null, 2));
+}
+
+function loadAppPins() {
+  try {
+    return JSON.parse(fs.readFileSync(APP_PINS_FILE, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+function saveAppPins(pins) {
+  fs.writeFileSync(APP_PINS_FILE, JSON.stringify(pins, null, 2));
+}
+
+// Keeps one pinned app message per group: a new /app unpins the previous one
+// instead of stacking pins and "pinned a message" service notices.
+async function pinAppMessage(ctx, sent) {
+  if (ctx.chat.type === 'private' || !sent) return;
+
+  const pins = loadAppPins();
+  const storedMessageId = pins[ctx.chat.id];
+
+  if (storedMessageId) {
+    // If our previous app message is still the pinned one, keep it — no need
+    // to unpin/repin (and generate service notices) on every /app.
+    const stillPinned = await ctx.getChat().then(function (info) {
+      return !!(info && info.pinned_message && info.pinned_message.message_id === storedMessageId);
+    }).catch(function () { return false; });
+    if (stillPinned) return;
+    // may fail if it was already unpinned or deleted — that's fine
+    await ctx.unpinChatMessage(storedMessageId).catch(() => { });
+  }
+
+  await ctx.pinChatMessage(sent.message_id, { disable_notification: true }).catch(() => { });
+  pins[ctx.chat.id] = sent.message_id;
+  saveAppPins(pins);
 }
 
 const miniAppUpload = multer({
@@ -915,10 +952,7 @@ bot.command('app', async (ctx) => {
       parse_mode: 'HTML',
       reply_markup: miniRow ? { inline_keyboard: [miniRow] } : undefined
     });
-    // In groups, pin the app message so every member always has the button one tap away
-    if (ctx.chat.type !== 'private' && miniRow && sent) {
-      await ctx.pinChatMessage(sent.message_id, { disable_notification: true }).catch(() => { });
-    }
+    await pinAppMessage(ctx, sent);
   } catch (e) {
     console.error('❌ /app reply failed:', e.message);
   }
