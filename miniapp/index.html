@@ -76,6 +76,30 @@
     background: rgba(0, 0, 0, .65); color: #fff; font-size: 11px; line-height: 1;
     cursor: pointer; display: flex; align-items: center; justify-content: center;
   }
+  .recording-bar {
+    display: none; align-items: center; gap: 8px; margin-top: 10px;
+    background: rgba(255, 59, 48, .12); border: 1.5px solid #ff3b30;
+    border-radius: 12px; padding: 10px 12px; font-size: 14px;
+    color: #ff3b30; font-weight: 700;
+  }
+  .rec-dot { width: 10px; height: 10px; border-radius: 50%; background: #ff3b30; animation: blink 1s infinite; }
+  @keyframes blink { 50% { opacity: .2; } }
+  .voice-item {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--tg-theme-secondary-bg-color, #f7f7f8);
+    border-radius: 12px; padding: 9px 12px; margin-top: 8px; font-size: 14px;
+  }
+  .voice-item .vp {
+    width: 34px; height: 34px; border-radius: 50%; border: none; cursor: pointer;
+    background: var(--tg-theme-button-color, #3390ec);
+    color: var(--tg-theme-button-text-color, #fff); font-size: 14px;
+  }
+  .voice-item .vt { flex: 1; }
+  .voice-item .vr {
+    border: none; cursor: pointer; font-family: inherit;
+    background: rgba(255, 59, 48, .14); color: #ff3b30; font-weight: 700;
+    border-radius: 8px; padding: 6px 10px; font-size: 12.5px;
+  }
 
   #cameraModal {
     display: none; position: fixed; inset: 0; z-index: 100;
@@ -169,6 +193,13 @@
         <button type="button" data-u="Medium" class="active">🟡 មធ្យម</button>
         <button type="button" data-u="High">🔴 បន្ទាន់</button>
       </div>
+
+      <label class="section">🎙️ សំឡេងពណ៌នា <span class="hint" style="font-weight:400">(និយាយខ្មែរ ឬអង់គ្លេស — max 3)</span></label>
+      <button type="button" class="photo-btn" id="recordBtn" style="width:100%">🎙️ ថតសំឡេង<span style="font-size:11px;opacity:.7">Record</span></button>
+      <div id="recordingBar" class="recording-bar">
+        <span class="rec-dot"></span><span id="recTime">0:00</span><span>កំពុងថត... ចុចប៊ូតុងដើម្បីបញ្ឈប់</span>
+      </div>
+      <div id="voiceList"></div>
 
       <label class="section">📸 រូបភាព Error <span class="hint" style="font-weight:400">(Optional — អតិបរមា 4 រូប / max 4)</span></label>
       <div class="photo-buttons">
@@ -279,6 +310,128 @@
     addPhotoFiles(galleryInput.files);
     galleryInput.value = '';
   });
+
+  // ---------- Voice recording ----------
+  const MAX_VOICES = 3;
+  let voiceClips = []; // { file, url, seconds }
+  let mediaRecorder = null;
+  let recStream = null;
+  let recChunks = [];
+  let recTimer = null;
+  let recSeconds = 0;
+  let recMime = '';
+  let playingIdx = -1;
+  const voiceAudio = new Audio();
+
+  function fmtSecs(s) { return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+
+  function renderVoiceList() {
+    document.getElementById('voiceList').innerHTML = voiceClips.map(function (v, i) {
+      return '<div class="voice-item">' +
+        '<button type="button" class="vp" data-i="' + i + '">' + (playingIdx === i ? '⏸' : '▶') + '</button>' +
+        '<span class="vt">🎙️ សំឡេង ' + (i + 1) + ' · ' + fmtSecs(v.seconds) + '</span>' +
+        '<button type="button" class="vr" data-i="' + i + '">✕</button>' +
+        '</div>';
+    }).join('');
+  }
+
+  document.getElementById('voiceList').addEventListener('click', function (e) {
+    const play = e.target.closest('.vp');
+    const rm = e.target.closest('.vr');
+    if (rm) {
+      const i = Number(rm.dataset.i);
+      URL.revokeObjectURL(voiceClips[i].url);
+      voiceClips.splice(i, 1);
+      playingIdx = -1;
+      voiceAudio.pause();
+      renderVoiceList();
+      return;
+    }
+    if (play) {
+      const i = Number(play.dataset.i);
+      if (playingIdx === i) {
+        voiceAudio.pause();
+        playingIdx = -1;
+        renderVoiceList();
+        return;
+      }
+      voiceAudio.src = voiceClips[i].url;
+      voiceAudio.play();
+      playingIdx = i;
+      renderVoiceList();
+    }
+  });
+  voiceAudio.addEventListener('ended', function () {
+    playingIdx = -1;
+    renderVoiceList();
+  });
+
+  function stopRecordingCleanup() {
+    if (recStream) {
+      recStream.getTracks().forEach(function (t) { t.stop(); });
+      recStream = null;
+    }
+    clearInterval(recTimer);
+    document.getElementById('recordingBar').style.display = 'none';
+    document.getElementById('recordBtn').innerHTML = '🎙️ ថតសំឡេង<span style="font-size:11px;opacity:.7">Record</span>';
+    mediaRecorder = null;
+  }
+
+  async function toggleRecording() {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+      mediaRecorder.stop(); // onstop handles saving + cleanup
+      return;
+    }
+    if (voiceClips.length >= MAX_VOICES) {
+      alert('អតិបរមា ' + MAX_VOICES + ' សំឡេង! (maximum 3 voice clips)');
+      return;
+    }
+    if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) || typeof MediaRecorder === 'undefined') {
+      alert('មីក្រូហ្វូនមិនធ្វើការទេក្នុងឧបករណ៍នេះ។ (microphone unavailable here)');
+      return;
+    }
+    try {
+      recStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      alert('មិនអាចបើកមីក្រូហ្វូនបាន (microphone blocked). សូមផ្ញើសំឡេងក្នុង Group ជំនួស។');
+      return;
+    }
+    recChunks = [];
+    const candidates = ['audio/ogg;codecs=opus', 'audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
+    recMime = '';
+    for (const m of candidates) {
+      if (MediaRecorder.isTypeSupported(m)) { recMime = m; break; }
+    }
+    mediaRecorder = new MediaRecorder(recStream, recMime ? { mimeType: recMime } : undefined);
+    mediaRecorder.ondataavailable = function (e) { if (e.data && e.data.size) recChunks.push(e.data); };
+    mediaRecorder.onstop = function () {
+      const mime = recMime || 'audio/webm';
+      const secs = recSeconds;
+      stopRecordingCleanup();
+      const blob = new Blob(recChunks, { type: mime });
+      recChunks = [];
+      if (blob.size < 2000) return;
+      const ext = mime.indexOf('ogg') !== -1 ? 'ogg' : (mime.indexOf('mp4') !== -1 ? 'm4a' : 'webm');
+      voiceClips.push({
+        file: new File([blob], 'voice_' + Date.now() + '.' + ext, { type: mime }),
+        url: URL.createObjectURL(blob),
+        seconds: secs
+      });
+      renderVoiceList();
+    };
+    recSeconds = 0;
+    document.getElementById('recTime').textContent = '0:00';
+    document.getElementById('recordingBar').style.display = 'flex';
+    document.getElementById('recordBtn').innerHTML = '⏹ បញ្ឈប់ថត (Stop)';
+    recTimer = setInterval(function () {
+      recSeconds++;
+      document.getElementById('recTime').textContent = fmtSecs(recSeconds);
+      if (recSeconds >= 180 && mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+    }, 1000);
+    mediaRecorder.start();
+  }
+
+  document.getElementById('recordBtn').addEventListener('click', toggleRecording);
 
   // In-page camera: used when the device allows camera access (phones inside Telegram).
   // Falls back to the system picker when it does not (some desktops, or denied permission).
@@ -412,7 +565,7 @@
         const preview = escapeHtml(t.issue.slice(0, 70)) + (t.issue.length > 70 ? '…' : '');
         return '<div class="ticket">' +
           '<div>📌 ' + preview + '<br><span class="hint">' + escapeHtml(t.timeText) + '</span></div>' +
-          '<div class="badge">' + t.urgencyEmoji + (t.photos ? ' 📸' + t.photos : '') + '</div>' +
+          '<div class="badge">' + t.urgencyEmoji + (t.photos ? ' 📸' + t.photos : '') + (t.voices ? ' 🎙️' + t.voices : '') + '</div>' +
           '</div>';
       }).join('');
     } catch (e) {
@@ -422,8 +575,8 @@
 
   async function submitTicket() {
     const issue = issueField.value.trim();
-    if (!issue) {
-      alert('សូមសរសេរបញ្ហាជាមុនសិន! (Please describe the issue first)');
+    if (!issue && !voiceClips.length) {
+      alert('សូមសរសេរបញ្ហា ឬថតសំឡេងជាមុនសិន! (Please describe the issue — text or voice)');
       return;
     }
 
@@ -436,6 +589,7 @@
       fd.append('issue', issue);
       fd.append('urgency', urgency);
       photoFiles.forEach(function (p) { fd.append('photos', p.file); });
+      voiceClips.forEach(function (v) { fd.append('voices', v.file); });
 
       const res = await fetch('/api/tickets', { method: 'POST', headers: authHeaders(), body: fd });
       const data = await res.json();
@@ -450,6 +604,11 @@
       photoFiles.forEach(function (p) { URL.revokeObjectURL(p.url); });
       photoFiles = [];
       renderPhotoGrid();
+      voiceClips.forEach(function (v) { URL.revokeObjectURL(v.url); });
+      voiceClips = [];
+      playingIdx = -1;
+      voiceAudio.pause();
+      renderVoiceList();
     } catch (e) {
       alert('ផ្ញើមិនបានសម្រេច សូមព្យាយាមម្តងទៀត។ (Submission failed, please try again)');
       btn.disabled = false;

@@ -183,16 +183,23 @@ const miniAppUpload = multer({
     destination: os.tmpdir(),
     filename: (_req, file, cb) => cb(null, `miniapp_${Date.now()}_${Math.random().toString(36).slice(2)}${(path.extname(file.originalname || '') || '.jpg').toLowerCase()}`)
   }),
-  limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => cb(null, /^image\//.test(file.mimetype))
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => cb(null, /^image\//.test(file.mimetype) || /^audio\//.test(file.mimetype))
 });
 
-app.post('/api/tickets', miniAppUpload.array('photos', 4), async (req, res) => {
+app.post('/api/tickets', miniAppUpload.fields([
+  { name: 'photos', maxCount: 4 },
+  { name: 'voices', maxCount: 3 }
+]), async (req, res) => {
   const issue = (req.body.issue || '').trim().slice(0, 3000);
   const urgencyInput = ['Low', 'Medium', 'High'].includes(req.body.urgency) ? req.body.urgency : 'Medium';
+  const photoPaths = ((req.files && req.files.photos) || []).map(f => f.path);
+  const voicePaths = ((req.files && req.files.voices) || []).map(f => f.path);
 
-  if (!issue) {
-    return res.status(400).json({ ok: false, error: 'Issue description is required' });
+  if (!issue && !voicePaths.length) {
+    photoPaths.forEach(p => fs.promises.unlink(p).catch(() => { }));
+    voicePaths.forEach(p => fs.promises.unlink(p).catch(() => { }));
+    return res.status(400).json({ ok: false, error: 'Issue text or voice recording is required' });
   }
 
   const { fullName, username, id: userId } = formatUserInfo(req.tgUser);
@@ -202,6 +209,18 @@ app.post('/api/tickets', miniAppUpload.array('photos', 4), async (req, res) => {
     timeStyle: 'medium'
   });
 
+  let transcriptions = [];
+  let voiceLanguage = null;
+  if (voicePaths.length) {
+    try {
+      const analysis = await analyzeMiniAppVoices(voicePaths);
+      transcriptions = (analysis.transcriptions || []).map(t => String(t || '').trim()).filter(Boolean);
+      voiceLanguage = analysis.language || null;
+    } catch (err) {
+      console.error('❌ Mini App voice transcription failed:', err.message || err);
+    }
+  }
+
   let alertMessage = `🚨 <b>NEW IT SUPPORT TICKET (Mini App)</b>\n`;
   alertMessage += `━━━━━━━━━━━━━━━━━━━━━\n`;
   alertMessage += `👤 <b>Reporter:</b> ${escapeHtml(fullName)} (${escapeHtml(username)})\n`;
@@ -210,19 +229,45 @@ app.post('/api/tickets', miniAppUpload.array('photos', 4), async (req, res) => {
   alertMessage += `${urgencyInput === 'High' ? '🔴' : urgencyInput === 'Medium' ? '🟡' : '🟢'} <b>Urgency:</b> <b>${urgencyInput}</b>\n`;
   alertMessage += `📅 <b>Time:</b> ${timestamp} (GMT+7)\n`;
   alertMessage += `━━━━━━━━━━━━━━━━━━━━━\n`;
-  alertMessage += `📌 <b>Issue:</b>\n${escapeHtml(issue)}\n`;
+  if (issue) {
+    alertMessage += `📌 <b>Issue:</b>\n${escapeHtml(issue)}\n`;
+  }
+  if (transcriptions.length) {
+    if (voiceLanguage) {
+      alertMessage += `🗣️ <b>Spoken Language:</b> ${escapeHtml(voiceLanguage)}\n`;
+    }
+    alertMessage += `🎙️ <b>${transcriptions.length > 1 ? 'Voice Transcriptions' : 'Voice Transcription'}:</b>\n`;
+    transcriptions.forEach(function (t, i) {
+      alertMessage += `<i>${i + 1}. ${escapeHtml(t)}</i>\n`;
+    });
+  }
   alertMessage += `━━━━━━━━━━━━━━━━━━━━━`;
-
-  const photoPaths = (req.files || []).map(f => f.path);
 
   try {
     await sendToITGroup(alertMessage, photoPaths);
   } catch (err) {
     console.error('❌ Mini App ticket delivery failed:', err.message || err);
+    photoPaths.forEach(p => fs.promises.unlink(p).catch(() => { }));
+    voicePaths.forEach(p => fs.promises.unlink(p).catch(() => { }));
     return res.status(502).json({ ok: false, error: 'Could not deliver ticket to IT' });
-  } finally {
-    photoPaths.forEach(function (p) { fs.promises.unlink(p).catch(() => { }); });
   }
+
+  // Deliver the original clips so IT can also listen to how the issue was described
+  for (let i = 0; i < voicePaths.length; i++) {
+    try {
+      const caption = i === 0 ? '🎙️ Original voice clip(s) from the Mini App ticket' : undefined;
+      if (voicePaths[i].endsWith('.ogg')) {
+        await bot.telegram.sendVoice(IT_GROUP_ID, { source: voicePaths[i] }, { caption });
+      } else {
+        await bot.telegram.sendAudio(IT_GROUP_ID, { source: voicePaths[i] }, { caption, title: 'Voice clip ' + (i + 1) });
+      }
+    } catch (e) {
+      console.warn('Could not send mini app voice clip:', e.message);
+    }
+  }
+
+  photoPaths.forEach(p => fs.promises.unlink(p).catch(() => { }));
+  voicePaths.forEach(p => fs.promises.unlink(p).catch(() => { }));
 
   const tickets = loadTickets();
   const ticket = {
@@ -233,6 +278,8 @@ app.post('/api/tickets', miniAppUpload.array('photos', 4), async (req, res) => {
     issue,
     urgency: urgencyInput,
     photos: photoPaths.length,
+    voices: voicePaths.length,
+    transcriptions,
     createdAt: new Date().toISOString()
   };
   tickets.push(ticket);
@@ -252,6 +299,7 @@ app.get('/api/tickets', (req, res) => {
       issue: t.issue,
       urgency: t.urgency,
       photos: t.photos || 0,
+      voices: t.voices || 0,
       urgencyEmoji: t.urgency === 'High' ? '🔴' : t.urgency === 'Medium' ? '🟡' : '🟢',
       timeText: new Date(t.createdAt).toLocaleString('en-US', {
         timeZone: 'Asia/Phnom_Penh',
@@ -388,6 +436,7 @@ async function sendToITGroup(alertMessage, photos = []) {
 // ==========================================
 // 5. Dual Engine Processors (OpenAI & Gemini)
 // ==========================================
+const GEMINI_FALLBACK_MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-flash-lite'];
 
 async function processWithOpenAI(items, downloadedFiles, photoPaths) {
   if (!openai) throw new Error('OpenAI client not configured (Missing OPENAI_API_KEY)');
@@ -537,7 +586,7 @@ Return ONLY a valid JSON object matching this schema without markdown code block
 
   generativeParts.push(prompt);
 
-  const fallbackModels = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-flash-lite'];
+  const fallbackModels = GEMINI_FALLBACK_MODELS;
   let responseText = null;
 
   for (const modelName of fallbackModels) {
@@ -561,6 +610,61 @@ Return ONLY a valid JSON object matching this schema without markdown code block
   }
   parsed.engineUsed = 'Google Gemini AI';
   return parsed;
+}
+
+// Transcribe mini app voice clips (local files) with the available AI engine.
+// Khmer stays Khmer, English stays English — same behaviour as the group flow.
+async function analyzeMiniAppVoices(voicePaths) {
+  if (!voicePaths.length) return { transcriptions: [], language: null };
+
+  const prompt = 'You are a transcription assistant. The attached audio clip(s) are IT problem reports ' +
+    'spoken by a user in Khmer, English, or a mix of both. Transcribe each clip exactly as spoken, ' +
+    'in the language that was spoken. Return ONLY valid JSON without markdown:\n' +
+    '{"transcriptions": ["clip 1 text", "clip 2 text"], "language": "Khmer" or "English"}';
+
+  if (genAI) {
+    for (const modelName of GEMINI_FALLBACK_MODELS) {
+      try {
+        console.log(`🎙️ [Gemini] Transcribing ${voicePaths.length} mini app voice clip(s) with [${modelName}]...`);
+        const model = genAI.getGenerativeModel({ model: modelName });
+        const parts = voicePaths.map(function (p) {
+          const mime = p.endsWith('.m4a') ? 'audio/mp4' : (p.endsWith('.ogg') ? 'audio/ogg' : 'audio/webm');
+          return fileToGenerativePart(p, mime);
+        });
+        parts.push(prompt);
+        const result = await model.generateContent(parts);
+        const text = result.response.text();
+        const match = text.match(/\{[\s\S]*\}/);
+        if (match) {
+          const parsed = JSON.parse(match[0]);
+          if (Array.isArray(parsed.transcriptions)) {
+            return { transcriptions: parsed.transcriptions, language: parsed.language || null };
+          }
+        }
+      } catch (e) {
+        console.warn(`⚠️ [Gemini] ${modelName} transcription failed:`, e.message);
+      }
+    }
+  }
+
+  if (openai) {
+    try {
+      const transcriptions = [];
+      for (const p of voicePaths) {
+        const tr = await openai.audio.transcriptions.create({
+          file: fs.createReadStream(p),
+          model: 'whisper-1',
+          response_format: 'text'
+        });
+        transcriptions.push((typeof tr === 'string' ? tr : tr.text || '').trim());
+      }
+      return { transcriptions, language: null };
+    } catch (e) {
+      console.warn('⚠️ [OpenAI] Whisper transcription failed:', e.message);
+    }
+  }
+
+  throw new Error('All AI engines failed to transcribe');
 }
 
 // ==========================================
