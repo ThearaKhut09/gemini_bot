@@ -110,7 +110,16 @@ Today no database exists (by design — simplest and cheapest). If the company w
 3. **Faster solutions** — when a new ticket matches a previously solved one, the AI can suggest the earlier solution to IT (a growing knowledge base built from the company's own history).
 4. **Audit trail** — a verified record of what was reported, when, by whom, and how it was resolved.
 
-**Cost of this extension:** $0 to start (free database tiers); only relevant upgrade is a paid database tier if volume grows, roughly $0–10/month.
+**Cost of this extension:** a ticket record is tiny (~1–2 KB), so even 1,000 tickets per month take years to fill a free database. Realistic monthly pricing (approximate — providers adjust prices):
+
+| Option | What it includes | ~Cost / month |
+|---|---|---|
+| Free database tiers (Supabase / Neon / Turso) | 0.5–10 GB — enough for years of tickets | **$0** |
+| Render Postgres (basic, hosted next to the bot) | Small managed database, simple setup | ~$6–7 |
+| Supabase Pro (business package) | 8 GB database + 100 GB file storage + automatic daily backups + support | ~$25 |
+| Cloudflare R2 (only if archiving ticket photos) | 10 GB free, then ~$0.015/GB | $0–2 at this volume |
+
+What paid storage buys is not space (it will never fill up at this volume) — it is **automatic backups, uptime guarantees and support**.
 
 ## 5. Costs
 
