@@ -150,7 +150,7 @@ const miniAppUpload = multer({
   fileFilter: (_req, file, cb) => cb(null, /^image\//.test(file.mimetype))
 });
 
-app.post('/api/tickets', miniAppUpload.single('photo'), async (req, res) => {
+app.post('/api/tickets', miniAppUpload.array('photos', 4), async (req, res) => {
   const issue = (req.body.issue || '').trim().slice(0, 3000);
   const urgencyInput = ['Low', 'Medium', 'High'].includes(req.body.urgency) ? req.body.urgency : 'Medium';
 
@@ -176,15 +176,15 @@ app.post('/api/tickets', miniAppUpload.single('photo'), async (req, res) => {
   alertMessage += `📌 <b>Issue:</b>\n${escapeHtml(issue)}\n`;
   alertMessage += `━━━━━━━━━━━━━━━━━━━━━`;
 
-  const photoPath = req.file ? req.file.path : null;
+  const photoPaths = (req.files || []).map(f => f.path);
 
   try {
-    await sendToITGroup(alertMessage, photoPath ? [photoPath] : []);
+    await sendToITGroup(alertMessage, photoPaths);
   } catch (err) {
     console.error('❌ Mini App ticket delivery failed:', err.message || err);
     return res.status(502).json({ ok: false, error: 'Could not deliver ticket to IT' });
   } finally {
-    if (photoPath) fs.promises.unlink(photoPath).catch(() => { });
+    photoPaths.forEach(function (p) { fs.promises.unlink(p).catch(() => { }); });
   }
 
   const tickets = loadTickets();
@@ -195,6 +195,7 @@ app.post('/api/tickets', miniAppUpload.single('photo'), async (req, res) => {
     username,
     issue,
     urgency: urgencyInput,
+    photos: photoPaths.length,
     createdAt: new Date().toISOString()
   };
   tickets.push(ticket);
@@ -213,6 +214,7 @@ app.get('/api/tickets', (req, res) => {
       id: t.id,
       issue: t.issue,
       urgency: t.urgency,
+      photos: t.photos || 0,
       urgencyEmoji: t.urgency === 'High' ? '🔴' : t.urgency === 'Medium' ? '🟡' : '🟢',
       timeText: new Date(t.createdAt).toLocaleString('en-US', {
         timeZone: 'Asia/Phnom_Penh',
