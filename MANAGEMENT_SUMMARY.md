@@ -33,6 +33,35 @@ IT Support Group receives ONE structured ticket
 - Voice transcription and analysis use **Google Gemini AI** (with OpenAI as automatic backup engine).
 - The AI is used only to **process** the report — it does not answer employees or make decisions; the IT team stays in full control of what happens next.
 
+### 2.1 Detailed reporting flow
+
+**Flow A — Report in the group (voice / photo / text):**
+
+1. The employee sends a voice message, photo, or text in the monitored group. The bot immediately shows a ✍️ reaction so the employee knows it was heard.
+2. The bot **waits 8 seconds and bundles everything** the same person sends — e.g. a voice note *plus* a screenshot *plus* a follow-up text all become **one ticket**, not three.
+3. The AI checks the content:
+   - **Just a greeting or small talk** → the bot replies politely in the group. No ticket is created, IT is not disturbed.
+   - **A real problem** → the AI transcribes the voice (Khmer or English), rewrites the issue clearly, estimates urgency (🟢 Low / 🟡 Medium / 🔴 High), and reads error codes from photos (OCR).
+4. The bot sends **one structured ticket** to the IT support group: reporter, time, source, urgency, issue summary, original transcription/text, suggested first troubleshooting step, and the attached screenshots.
+5. If any step fails (network, AI unavailable), IT receives an **error alert** — a report is never silently lost.
+
+**Flow B — Report through the Mini App:**
+
+1. The employee opens the app (menu button in the bot chat, pinned message in a group, 📎 menu, or the `/app` command).
+2. They fill a short form: describe the issue, pick the urgency, optionally attach a photo.
+3. The bot verifies the employee's Telegram identity, formats the same structured ticket, and delivers it to the IT group.
+4. The employee instantly sees "✅ sent" and their list of previous reports inside the app.
+
+**Flow C — Automatic security protection (always active):**
+
+1. Someone posts a dangerous file type (.exe, .bat, .zip, etc.) in the group.
+2. The bot **deletes it immediately**, posts a Khmer warning in the group, and sends a security alert to IT (who sent it, what file, when).
+3. No AI is involved — this protection runs even if the AI service is down.
+
+### 2.2 What happens after the ticket
+
+The bot's job ends at delivery. The IT team reads the ticket in the IT group and handles the problem as usual — nothing is automated beyond that, so existing IT workflows stay unchanged.
+
 ## 3. Control
 
 | Area | How it is controlled |
