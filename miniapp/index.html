@@ -112,6 +112,11 @@
     background: #3390ec; color: #fff; padding: 10px 16px;
     font-size: 14px; font-weight: 700; font-family: inherit; cursor: pointer;
   }
+  .camera-loading {
+    position: absolute; inset: 0; z-index: 1;
+    display: flex; align-items: center; justify-content: center;
+    background: #000; color: #fff; font-size: 15px;
+  }
 
   .btn-primary {
     position: fixed; left: 12px; right: 12px;
@@ -205,6 +210,7 @@
 
   <div id="cameraModal">
     <video id="cameraVideo" autoplay playsinline muted></video>
+    <div id="cameraLoading" class="camera-loading" style="display:none">⏳ កំពុងបើកកាមេរ៉ា...</div>
     <div id="cameraHint" class="camera-hint" style="display:none">
       ⚠️ កាមេរ៉ាមិនបានបង្ហាញរូបភាព (camera feed not showing)
       <br>
@@ -271,23 +277,22 @@
   // Falls back to the system picker when it does not (some desktops, or denied permission).
   let cameraStream = null;
   let cameraWatchdog = null;
+  let cameraStartTimeout = null;
   const cameraModal = document.getElementById('cameraModal');
   const cameraVideo = document.getElementById('cameraVideo');
+  const IS_ANDROID = /android/i.test(navigator.userAgent || '');
 
-  function showCameraHint() {
-    document.getElementById('cameraHint').style.display = 'block';
-  }
-  function hideCameraHint() {
-    document.getElementById('cameraHint').style.display = 'none';
-  }
-  function openSystemCamera() {
-    stopCamera();
-    cameraFallbackInput.click();
-  }
+  function showCameraHint() { document.getElementById('cameraHint').style.display = 'block'; }
+  function hideCameraHint() { document.getElementById('cameraHint').style.display = 'none'; }
+  function showCameraLoading() { document.getElementById('cameraLoading').style.display = 'flex'; }
+  function hideCameraLoading() { document.getElementById('cameraLoading').style.display = 'none'; }
+  function openSystemCamera() { stopCamera(); cameraFallbackInput.click(); }
 
   function stopCamera() {
     clearTimeout(cameraWatchdog);
+    clearTimeout(cameraStartTimeout);
     hideCameraHint();
+    hideCameraLoading();
     if (cameraStream) {
       cameraStream.getTracks().forEach(function (t) { t.stop(); });
       cameraStream = null;
@@ -296,18 +301,32 @@
   }
 
   async function openCamera() {
+    // Android: camera init inside Telegram's WebView is very slow/unreliable —
+    // the native camera app opens instantly and always works, so use it directly.
+    if (IS_ANDROID) {
+      cameraFallbackInput.click();
+      return;
+    }
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      cameraModal.classList.add('open');
+      showCameraLoading();
+      let lateStream = null;
       try {
-        cameraStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 } },
-          audio: false
-        });
-        cameraVideo.srcObject = cameraStream;
+        const stream = await Promise.race([
+          navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } },
+            audio: false
+          }).then(function (s) { lateStream = s; return s; }),
+          new Promise(function (_, reject) {
+            cameraStartTimeout = setTimeout(function () { reject(new Error('camera timeout')); }, 8000);
+          })
+        ]);
+        clearTimeout(cameraStartTimeout);
+        cameraStream = stream;
+        cameraVideo.srcObject = stream;
         cameraVideo.muted = true;
-        cameraModal.classList.add('open');
         try { await cameraVideo.play(); } catch (e) { }
-        // Android WebView quirk: permission granted but the feed may never start
-        // rendering. If no picture appears shortly, offer the system camera.
+        hideCameraLoading();
         hideCameraHint();
         cameraWatchdog = setTimeout(function () {
           if (cameraVideo.readyState < 2 || cameraVideo.paused || cameraVideo.videoWidth === 0) {
@@ -316,7 +335,11 @@
         }, 3000);
         return;
       } catch (e) {
-        // camera denied or unavailable -> system picker with camera hint
+        // timed out or denied: release anything the late promise produced
+        if (lateStream) { lateStream.getTracks().forEach(function (t) { t.stop(); }); }
+        stopCamera();
+        cameraFallbackInput.click();
+        return;
       }
     }
     cameraFallbackInput.click();
@@ -324,6 +347,7 @@
 
   cameraVideo.addEventListener('playing', function () {
     clearTimeout(cameraWatchdog);
+    hideCameraLoading();
     hideCameraHint();
   });
   // If autoplay is blocked by the WebView, one tap on the viewfinder starts the feed
