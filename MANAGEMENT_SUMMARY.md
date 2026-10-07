@@ -121,6 +121,8 @@ Today no database exists (by design — simplest and cheapest). If the company w
 
 What paid storage buys is not space (it will never fill up at this volume) — it is **automatic backups, uptime guarantees and support**.
 
+**Recommended option for us:** **Supabase** — one service provides both the database (ticket records) and file storage (voice/photo copies), free tier to start, Pro tier (~$25/month) when guaranteed backups are wanted. Note that text records go in the database while voice/photo files go to file storage — the two are linked by ticket ID. With ~50 reports/day (voice + photo each), data grows ~65 MB/month, so the free tier lasts roughly a year and the paid tier effectively forever.
+
 ## 5. Costs
 
 | Item | Current cost | Notes / upgrade path |
