@@ -39,6 +39,9 @@ IT group in the same format as group reports.
 - **API:** `POST /api/tickets`, `GET /api/tickets` — authenticated via Telegram `initData`
 - **Setup:** set `MINIAPP_URL` in `.env` (must be HTTPS — use a tunnel like `ngrok`/`cloudflared`
   for local testing), then register the URL in @BotFather via `/newapp` or `/setmenubutton`
+- **In groups:** Telegram rejects `web_app` inline buttons outside private chats, so set
+  `MINIAPP_TG_LINK` (the `t.me/<bot>/<app>` link from `/newapp`) — group users get a normal
+  link button that opens the mini app
 - **Dev mode:** set `MINIAPP_DEV_MODE=1` (and keep `NODE_ENV` unset) to test the form in a
   normal browser as a fake user. **Never enable in production.**
 - Tickets are stored locally in `data/tickets.json` (git-ignored).

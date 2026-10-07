@@ -34,4 +34,7 @@ services:
       # Set after first deploy: https://<your-service>.onrender.com/app
       - key: MINIAPP_URL
         sync: false
+      # t.me deep link from BotFather /newapp (e.g. https://t.me/mybot/itsupport) — app button in groups
+      - key: MINIAPP_TG_LINK
+        sync: false
       # NEVER set MINIAPP_DEV_MODE on Render.

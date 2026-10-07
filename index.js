@@ -73,6 +73,18 @@ app.get('/health', (req, res) => res.status(200).send('OK'));
 // 3.5 Telegram Mini App (report an issue without typing in the group)
 // ==========================================
 const MINIAPP_URL = process.env.MINIAPP_URL || '';
+// t.me deep link from BotFather /newapp (e.g. https://t.me/mybot/itsupport).
+// Used for the app button in groups, where Telegram rejects web_app buttons.
+const MINIAPP_TG_LINK = process.env.MINIAPP_TG_LINK || '';
+
+function miniAppButtonRow(chat) {
+  if (!MINIAPP_URL) return null;
+  // Telegram only accepts web_app inline buttons in private chats
+  if (chat.type === 'private') {
+    return [{ text: '📱 បើកកម្មវិធី (Open App)', web_app: { url: MINIAPP_URL } }];
+  }
+  return MINIAPP_TG_LINK ? [{ text: '🛠️ Open IT App', url: MINIAPP_TG_LINK }] : null;
+}
 const TICKETS_FILE = path.join(__dirname, 'data', 'tickets.json');
 fs.mkdirSync(path.dirname(TICKETS_FILE), { recursive: true });
 
@@ -716,9 +728,10 @@ bot.start((ctx) => {
     ]
   };
 
-  if (MINIAPP_URL) keyboard.inline_keyboard.push([{ text: '📱 បើកកម្មវិធី (Open App)', web_app: { url: MINIAPP_URL } }]);
+  const startMiniRow = miniAppButtonRow(ctx.chat);
+  if (startMiniRow) keyboard.inline_keyboard.push(startMiniRow);
 
-  ctx.reply(welcomeText, { parse_mode: 'HTML', reply_markup: keyboard });
+  ctx.reply(welcomeText, { parse_mode: 'HTML', reply_markup: keyboard }).catch(() => { });
 });
 
 bot.command('help', (ctx) => {
@@ -746,9 +759,10 @@ bot.command('help', (ctx) => {
     ]
   };
 
-  if (MINIAPP_URL) keyboard.inline_keyboard.push([{ text: '📱 បើកកម្មវិធី (Open App)', web_app: { url: MINIAPP_URL } }]);
+  const helpMiniRow = miniAppButtonRow(ctx.chat);
+  if (helpMiniRow) keyboard.inline_keyboard.push(helpMiniRow);
 
-  ctx.reply(helpText, { parse_mode: 'HTML', reply_markup: keyboard });
+  ctx.reply(helpText, { parse_mode: 'HTML', reply_markup: keyboard }).catch(() => { });
 });
 
 // Report Handlers
@@ -883,16 +897,21 @@ bot.command('getid', (ctx) => {
   });
 });
 
-bot.command('app', (ctx) => {
+bot.command('app', async (ctx) => {
   if (!MINIAPP_URL) {
-    return ctx.reply('ℹ️ Mini App is not configured yet. Set <code>MINIAPP_URL</code> in .env and restart.', { parse_mode: 'HTML' });
+    return ctx.reply('ℹ️ Mini App is not configured yet. Set <code>MINIAPP_URL</code> in .env and restart.', { parse_mode: 'HTML' }).catch(() => { });
   }
-  ctx.reply('📱 <b>IT Support Mini App</b>\nបើកកម្មវិធីដើម្បីរាយការណ៍បញ្ហាដោយផ្ទាល់ (report an issue without typing in the group):', {
+
+  const miniRow = miniAppButtonRow(ctx.chat);
+  let text = '📱 <b>IT Support Mini App</b>\nបើកកម្មវិធីដើម្បីរាយការណ៍បញ្ហាដោយផ្ទាល់ (report an issue without typing in the group):';
+  if (!miniRow) {
+    text += '\n\n👉 បើក private chat ជាមួយ bot រួចចុចប៊ូតុង 🛠️ <b>Open IT App</b> នៅខាងក្រោម។';
+  }
+
+  await ctx.reply(text, {
     parse_mode: 'HTML',
-    reply_markup: {
-      inline_keyboard: [[{ text: '🛠️ Open IT App', web_app: { url: MINIAPP_URL } }]]
-    }
-  });
+    reply_markup: miniRow ? { inline_keyboard: [miniRow] } : undefined
+  }).catch((e) => console.error('❌ /app reply failed:', e.message));
 });
 
 // ----------------------------------------------------
