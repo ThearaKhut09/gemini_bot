@@ -85,6 +85,13 @@ function formatUserInfo(user) {
   return { fullName, username, id: user.id };
 }
 
+function escapeHtml(text) {
+  return String(text ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+}
+
 function getMessageLink(chat, messageId) {
   if (!messageId) return null;
   if (chat.username) return `https://t.me/${chat.username}/${messageId}`;
@@ -116,9 +123,15 @@ async function downloadTelegramFile(fileUrl, fileExt) {
   response.data.pipe(writer);
 
   return new Promise((resolve, reject) => {
+    const cleanup = () => fs.unlink(tempFilePath, () => { });
     writer.on('finish', () => resolve(tempFilePath));
     writer.on('error', (err) => {
-      fs.unlink(tempFilePath, () => { });
+      cleanup();
+      reject(err);
+    });
+    response.data.on('error', (err) => {
+      cleanup();
+      writer.destroy();
       reject(err);
     });
   });
@@ -291,6 +304,7 @@ async function processWithGemini(items, downloadedFiles, photoPaths) {
 You are an expert IT Support Engineer, incident triage specialist, and linguist.
 Analyze the user's input:
 - User Typed Text: "${userTexts || '(None)'}"
+- Voice Notes: Attached audio file(s) if any. Transcribe each voice note exactly as spoken.
 - Images: Attached if any.
 
 CRITICAL RULES:
@@ -311,6 +325,7 @@ Return ONLY a valid JSON object matching this schema without markdown code block
 {
   "is_problem": true | false,
   "language": "Khmer" | "English",
+  "voice_transcriptions": ["Exact transcription of each attached voice note, in order; empty array if there are none"],
   "ocr_text": "Error codes / text found in photos or 'None'",
   "issue_summary": "1-2 sentence clear issue summary in the SAME detected language (Khmer if Khmer, English if English)",
   "urgency": "Low" | "Medium" | "High",
@@ -321,7 +336,7 @@ Return ONLY a valid JSON object matching this schema without markdown code block
 
   generativeParts.push(prompt);
 
-  const fallbackModels = ['gemini-2.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.6-flash'];
+  const fallbackModels = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-flash-lite'];
   let responseText = null;
 
   for (const modelName of fallbackModels) {
@@ -340,6 +355,9 @@ Return ONLY a valid JSON object matching this schema without markdown code block
 
   const jsonMatch = responseText.match(/\{[\s\S]*\}/);
   const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { issue_summary: responseText, urgency: 'Medium' };
+  if (!Array.isArray(parsed.voice_transcriptions)) {
+    parsed.voice_transcriptions = parsed.voice_transcriptions ? [String(parsed.voice_transcriptions)] : [];
+  }
   parsed.engineUsed = 'Google Gemini AI';
   return parsed;
 }
@@ -373,7 +391,7 @@ function bufferUserReport(ctx, item) {
   session.items.push(item);
 
   try {
-    if (ctx.react) ctx.react('✍️');
+    if (ctx.react) ctx.react('✍️').catch(() => { });
   } catch (e) { }
 
   session.timer = setTimeout(() => {
@@ -436,10 +454,10 @@ async function processUnifiedTicket(sessionKey) {
 
       const isKhmer = (parsed.language || '').toLowerCase().includes('khmer');
       const defaultReply = isKhmer
-        ? `👋 សួស្តី <b>${fullName}</b>! តើខ្ញុំអាចជួយអ្វីអ្នកទាក់ទងនឹងបច្ចេកទេស/IT ដែរឬទេ? 😊\n\n👉 <i>អ្នកអាចផ្ញើសារជាសំឡេង 🎙️ រូបភាព 📸 ឬអក្សរ 💬 ដើម្បីរាយការណ៍បញ្ហាបានភ្លាមៗ។</i>`
-        : `👋 Hello <b>${fullName}</b>! How can I help you with your IT needs today? 😊\n\n👉 <i>Feel free to send a voice note 🎙️, photo 📸, or text 💬 to report an issue.</i>`;
+        ? `👋 សួស្តី <b>${escapeHtml(fullName)}</b>! តើខ្ញុំអាចជួយអ្វីអ្នកទាក់ទងនឹងបច្ចេកទេស/IT ដែរឬទេ? 😊\n\n👉 <i>អ្នកអាចផ្ញើសារជាសំឡេង 🎙️ រូបភាព 📸 ឬអក្សរ 💬 ដើម្បីរាយការណ៍បញ្ហាបានភ្លាមៗ។</i>`
+        : `👋 Hello <b>${escapeHtml(fullName)}</b>! How can I help you with your IT needs today? 😊\n\n👉 <i>Feel free to send a voice note 🎙️, photo 📸, or text 💬 to report an issue.</i>`;
 
-      const replyText = parsed.casual_reply ? `👋 ${parsed.casual_reply}` : defaultReply;
+      const replyText = parsed.casual_reply ? `👋 ${escapeHtml(parsed.casual_reply)}` : defaultReply;
 
       try {
         await bot.telegram.sendMessage(chat.id, replyText, {
@@ -464,11 +482,11 @@ async function processUnifiedTicket(sessionKey) {
 
     let alertMessage = `🚨 <b>NEW IT SUPPORT MASTER TICKET</b>\n`;
     alertMessage += `━━━━━━━━━━━━━━━━━━━━━\n`;
-    alertMessage += `👤 <b>Reporter:</b> ${fullName} (${username})\n`;
+    alertMessage += `👤 <b>Reporter:</b> ${escapeHtml(fullName)} (${escapeHtml(username)})\n`;
     alertMessage += `🆔 <b>User ID:</b> <code>${userId}</code>\n`;
-    alertMessage += `🏢 <b>Source:</b> ${groupTitle}\n`;
+    alertMessage += `🏢 <b>Source:</b> ${escapeHtml(groupTitle)}\n`;
     alertMessage += `📦 <b>Bundle:</b> ${voiceCount} 🎙️ (${formatDuration(totalDuration)}) | ${photoCount} 📸 | ${textCount} 💬\n`;
-    alertMessage += `${urgencyEmoji} <b>Urgency:</b> <b>${parsed.urgency || 'Normal'}</b>\n`;
+    alertMessage += `${urgencyEmoji} <b>Urgency:</b> <b>${escapeHtml(parsed.urgency || 'Normal')}</b>\n`;
     alertMessage += `📅 <b>Time:</b> ${timestamp} (GMT+7)\n`;
     if (messageLink) {
       alertMessage += `🔗 <b>Original Message:</b> <a href="${messageLink}">View in Group</a>\n`;
@@ -476,29 +494,29 @@ async function processUnifiedTicket(sessionKey) {
     alertMessage += `━━━━━━━━━━━━━━━━━━━━━\n`;
 
     if (parsed.ocr_text && parsed.ocr_text !== 'None' && parsed.ocr_text !== 'គ្មាន') {
-      alertMessage += `🔍 <b>Visual Screen OCR / Error:</b>\n<code>${parsed.ocr_text}</code>\n\n`;
+      alertMessage += `🔍 <b>Visual Screen OCR / Error:</b>\n<code>${escapeHtml(parsed.ocr_text)}</code>\n\n`;
     }
 
     if (isKhmer) {
-      alertMessage += `📌 <b>សង្ខេបបញ្ហា (Issue Summary):</b>\n${parsed.issue_summary}\n\n`;
+      alertMessage += `📌 <b>សង្ខេបបញ្ហា (Issue Summary):</b>\n${escapeHtml(parsed.issue_summary)}\n\n`;
     } else {
-      alertMessage += `📌 <b>Issue Summary:</b>\n${parsed.issue_summary}\n\n`;
+      alertMessage += `📌 <b>Issue Summary:</b>\n${escapeHtml(parsed.issue_summary)}\n\n`;
     }
 
     if (parsed.voice_transcriptions && parsed.voice_transcriptions.length > 0) {
       alertMessage += isKhmer ? `📝 <b>អត្ថបទសំឡេង (Voice Transcriptions):</b>\n` : `📝 <b>Voice Transcriptions:</b>\n`;
       parsed.voice_transcriptions.forEach((trans, idx) => {
-        alertMessage += `<i>${idx + 1}. ${trans}</i>\n`;
+        alertMessage += `<i>${idx + 1}. ${escapeHtml(trans)}</i>\n`;
       });
       alertMessage += `\n`;
     }
 
     if (userTexts) {
-      alertMessage += `💬 <b>សារអក្សរ (Text Content):</b>\n<i>${userTexts}</i>\n\n`;
+      alertMessage += `💬 <b>សារអក្សរ (Text Content):</b>\n<i>${escapeHtml(userTexts)}</i>\n\n`;
     }
 
     if (parsed.recommended_action) {
-      alertMessage += `💡 <b>ដំណោះស្រាយបឋម (Suggested Action):</b>\n${parsed.recommended_action}\n`;
+      alertMessage += `💡 <b>ដំណោះស្រាយបឋម (Suggested Action):</b>\n${escapeHtml(parsed.recommended_action)}\n`;
     }
 
     alertMessage += `━━━━━━━━━━━━━━━━━━━━━`;
@@ -510,9 +528,9 @@ async function processUnifiedTicket(sessionKey) {
 
     const errorMessage = `⚠️ <b>TICKET PROCESSING ERROR</b>\n` +
       `━━━━━━━━━━━━━━━━━━━━━\n` +
-      `👤 <b>Reporter:</b> ${fullName} (${username})\n` +
-      `🏢 <b>Source:</b> ${groupTitle}\n` +
-      `❌ <b>Error:</b> <code>${err.message || 'Error occurred during AI processing'}</code>\n` +
+      `👤 <b>Reporter:</b> ${escapeHtml(fullName)} (${escapeHtml(username)})\n` +
+      `🏢 <b>Source:</b> ${escapeHtml(groupTitle)}\n` +
+      `❌ <b>Error:</b> <code>${escapeHtml(err.message || 'Error occurred during AI processing')}</code>\n` +
       `━━━━━━━━━━━━━━━━━━━━━`;
 
     await sendToITGroup(errorMessage).catch(() => { });
@@ -652,7 +670,7 @@ bot.action('cmd_status', (ctx) => {
     `━━━━━━━━━━━━━━━━━━━━━\n` +
     `• <b>Service:</b> Online & Operational\n` +
     `• <b>Active AI Engine:</b> ${AI_PROVIDER.toUpperCase()}\n` +
-    `• <b>Ticket Bundling:</b> Active (5s buffer)\n` +
+    `• <b>Ticket Bundling:</b> Active (8s buffer)\n` +
     `• <b>Anti-Scam Protection:</b> Enabled 🛡️\n` +
     `• <b>Uptime:</b> ${hours}h ${minutes}m`;
 
@@ -694,7 +712,7 @@ bot.command('status', (ctx) => {
     `━━━━━━━━━━━━━━━━━━━━━\n` +
     `• <b>Service:</b> Online & Operational\n` +
     `• <b>Active AI Engine:</b> ${AI_PROVIDER.toUpperCase()}\n` +
-    `• <b>Ticket Bundling:</b> Active (5s buffer)\n` +
+    `• <b>Ticket Bundling:</b> Active (8s buffer)\n` +
     `• <b>Uptime:</b> ${hours}h ${minutes}m\n` +
     `• <b>Auto IT Forwarding:</b> Active ✅`;
 
@@ -706,7 +724,7 @@ bot.command('getid', (ctx) => {
   const chatType = ctx.chat.type;
   const chatTitle = ctx.chat.title || 'Private Chat';
   console.log(`📌 Chat ID for "${chatTitle}": ${chatId}`);
-  ctx.reply(`ℹ️ <b>Chat Details:</b>\n• <b>Title:</b> ${chatTitle}\n• <b>Type:</b> ${chatType}\n• <b>Chat ID:</b> <code>${chatId}</code>\n\n<i>Copy this Chat ID into your .env for IT_GROUP_ID</i>`, {
+  ctx.reply(`ℹ️ <b>Chat Details:</b>\n• <b>Title:</b> ${escapeHtml(chatTitle)}\n• <b>Type:</b> ${chatType}\n• <b>Chat ID:</b> <code>${chatId}</code>\n\n<i>Copy this Chat ID into your .env for IT_GROUP_ID</i>`, {
     parse_mode: 'HTML'
   });
 });
@@ -785,6 +803,9 @@ function formatBytes(bytes) {
 
 bot.on('document', async (ctx) => {
   const chat = ctx.chat;
+  if (MONITORED_GROUP_ID && chat.id.toString() !== MONITORED_GROUP_ID.toString()) return;
+  if (IT_GROUP_ID && chat.id.toString() === IT_GROUP_ID.toString()) return;
+
   const document = ctx.message.document;
   const fromUser = ctx.from;
   const fileName = document.file_name || 'unnamed_file';
@@ -809,7 +830,7 @@ bot.on('document', async (ctx) => {
     try {
       const warningMsg = `⚠️ <b>ការព្រមានសុវត្ថិភាព (Security Warning)</b>\n` +
         `━━━━━━━━━━━━━━━━━━━━━\n` +
-        `👤 <b>${fullName}</b>, ការផ្ញើឯកសារប្រភេទ <code>.${fileExt}</code> ត្រូវបានហាមឃាត់ដើម្បីការពារមេរោគ និង Scam។\n` +
+        `👤 <b>${escapeHtml(fullName)}</b>, ការផ្ញើឯកសារប្រភេទ <code>.${escapeHtml(fileExt)}</code> ត្រូវបានហាមឃាត់ដើម្បីការពារមេរោគ និង Scam។\n` +
         `🚫 <i>ឯកសារត្រូវបានលុបចេញដោយស្វ័យប្រវត្តិ។</i>`;
       await ctx.reply(warningMsg, { parse_mode: 'HTML' });
     } catch (warnErr) { }
@@ -823,11 +844,11 @@ bot.on('document', async (ctx) => {
 
     let securityAlert = `🛡️ <b>SECURITY ALERT: DANGEROUS FILE BLOCKED</b>\n`;
     securityAlert += `━━━━━━━━━━━━━━━━━━━━━\n`;
-    securityAlert += `👤 <b>Sender:</b> ${fullName} (${username})\n`;
+    securityAlert += `👤 <b>Sender:</b> ${escapeHtml(fullName)} (${escapeHtml(username)})\n`;
     securityAlert += `🆔 <b>User ID:</b> <code>${userId}</code>\n`;
-    securityAlert += `🏢 <b>Source:</b> ${groupTitle}\n`;
-    securityAlert += `📁 <b>File Name:</b> <code>${fileName}</code>\n`;
-    securityAlert += `⚠️ <b>Detected Extension:</b> <code>.${fileExt}</code>\n`;
+    securityAlert += `🏢 <b>Source:</b> ${escapeHtml(groupTitle)}\n`;
+    securityAlert += `📁 <b>File Name:</b> <code>${escapeHtml(fileName)}</code>\n`;
+    securityAlert += `⚠️ <b>Detected Extension:</b> <code>.${escapeHtml(fileExt)}</code>\n`;
     securityAlert += `📦 <b>File Size:</b> ${formatBytes(fileSize)}\n`;
     securityAlert += `📅 <b>Time:</b> ${timestamp} (GMT+7)\n`;
     securityAlert += `━━━━━━━━━━━━━━━━━━━━━\n`;
