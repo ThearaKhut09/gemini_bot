@@ -172,12 +172,12 @@ What paid storage buys is not space (it will never fill up at this volume) — i
 
 **AI cost per report (paid tier, approximate — verify at ai.google.dev/gemini-api/docs/pricing):**
 
-| What the employee sends | Cost |
+| What the employee sends | Cost (USD, paid tier) |
 |---|---|
-| 🎙️ 1-minute voice note | ~0.6¢ |
-| 📸 1 photo (error screenshot) | ~0.3¢ |
-| 💬 Text message | ~0.2¢ |
-| 📦 Full bundle (voice + photo + text in one report) | ~1¢ |
+| 🎙️ 1-minute voice note | ~$0.006 |
+| 📸 1 photo (error screenshot) | ~$0.003 |
+| 💬 Text message | ~$0.002 |
+| 📦 Full bundle (voice + photo + text in one report) | ~$0.01 |
 
 At ~50 reports per day (≈1,500/month), the paid AI tier would cost roughly **$6–10/month** (a promotional rate through 2026 halves this). Today the system runs on the free tier at **$0** — the paid tier's value is the data guarantee (submitted data is not used to train Google's models) and higher reliability, not capacity.
 | Mini App URL | **$0** | Uses Render's free `*.onrender.com` address; a company domain (optional, more professional) costs ~**$10–15/year** |
