@@ -160,7 +160,10 @@ Today no database exists (by design — simplest and cheapest). If the company w
 
 What paid storage buys is not space (it will never fill up at this volume) — it is **automatic backups, uptime guarantees and support**.
 
-**Recommended option for us:** **Supabase** — one service provides both the database (ticket records) and file storage (voice/photo copies), free tier to start, Pro tier (~$25/month) when guaranteed backups are wanted. Note that text records go in the database while voice/photo files go to file storage — the two are linked by ticket ID. With ~50 reports/day (voice + photo each), data grows ~65 MB/month, so the free tier lasts roughly a year and the paid tier effectively forever.
+**Recommended option for us:** **Supabase** — one service provides both the database (ticket records) and file storage (voice/photo copies), linked by ticket ID. Free-tier limits: 500 MB database, 1 GB file storage, 5 GB bandwidth/month, 7-day snapshot backups; the project pauses only if unused for a full week (never happens with daily tickets). At ~50 reports/day with a voice + photo each, data grows ~65 MB/**day**, so the plan is:
+
+- **Database (text records + transcriptions): always stored** — 500 MB holds hundreds of thousands of tickets, i.e. years of history on the free tier.
+- **File copies (voice/photos): optional** — the originals already live permanently in the IT group on Telegram. If we also archive copies, either auto-delete them after 30–60 days (fits the free tier forever) or take Supabase Pro (100 GB ≈ 4+ years of files, ~$25/month).
 
 ## 5. Costs
 
