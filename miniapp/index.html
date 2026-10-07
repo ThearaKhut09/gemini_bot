@@ -2,70 +2,120 @@
 <html lang="km">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  :root { color-scheme: light dark; }
   body {
     font-family: 'Noto Sans Khmer', 'Khmer OS Battambang', system-ui, sans-serif;
     background: var(--tg-theme-secondary-bg-color, #f0f2f5);
-    color: var(--tg-theme-text-color, #222);
-    padding: 14px 14px 84px;
+    color: var(--tg-theme-text-color, #1c1c1e);
+    padding: 12px 12px calc(96px + env(safe-area-inset-bottom, 0px));
     font-size: 15px;
     line-height: 1.55;
   }
   .card {
     background: var(--tg-theme-bg-color, #fff);
-    border-radius: 14px;
-    padding: 16px;
-    margin-bottom: 14px;
+    border-radius: 18px;
+    padding: 18px 16px;
+    margin-bottom: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .07);
   }
-  h1 { font-size: 18px; margin-bottom: 2px; }
-  .hint { color: var(--tg-theme-hint-color, #888); font-size: 13px; }
-  label.section { display: block; font-size: 14px; font-weight: 700; margin: 14px 0 6px; }
-  label.section:first-of-type { margin-top: 10px; }
+  h1 { font-size: 18px; letter-spacing: .2px; }
+  .hint { color: var(--tg-theme-hint-color, #8e8e93); font-size: 13px; }
+  label.section { display: block; font-size: 14px; font-weight: 700; margin: 16px 0 7px; }
+  label.section:first-of-type { margin-top: 12px; }
+
+  .textarea-wrap { position: relative; }
   textarea {
-    width: 100%; min-height: 110px;
-    border: 1px solid var(--tg-theme-hint-color, #ccc);
-    border-radius: 10px; padding: 10px; font-size: 15px; font-family: inherit;
-    background: var(--tg-theme-bg-color, #fff); color: var(--tg-theme-text-color, #222);
-    resize: vertical;
+    width: 100%; min-height: 120px;
+    border: 1.5px solid var(--tg-theme-hint-color, #d1d1d6);
+    border-radius: 14px; padding: 12px 12px 26px; font-size: 15px; font-family: inherit;
+    background: var(--tg-theme-secondary-bg-color, #f7f7f8); color: var(--tg-theme-text-color, #1c1c1e);
+    resize: vertical; transition: border-color .15s;
   }
+  textarea:focus { outline: none; border-color: var(--tg-theme-button-color, #3390ec); }
+  .counter {
+    position: absolute; right: 12px; bottom: 8px;
+    font-size: 11px; color: var(--tg-theme-hint-color, #8e8e93);
+    pointer-events: none;
+  }
+
   .urgency { display: flex; gap: 8px; }
   .urgency button {
-    flex: 1; padding: 10px 4px; border-radius: 10px;
-    border: 1.5px solid var(--tg-theme-hint-color, #ccc);
-    background: var(--tg-theme-bg-color, #fff); color: var(--tg-theme-text-color, #222);
-    font-size: 13px; font-family: inherit; cursor: pointer;
+    flex: 1; padding: 11px 4px; border-radius: 12px;
+    border: 1.5px solid var(--tg-theme-hint-color, #d1d1d6);
+    background: var(--tg-theme-bg-color, #fff); color: var(--tg-theme-text-color, #1c1c1e);
+    font-size: 13.5px; font-family: inherit; cursor: pointer;
+    transition: transform .1s, background .15s, border-color .15s;
   }
-  .urgency button.active { border-color: var(--tg-theme-button-color, #2481cc); font-weight: 700; }
-  .file-btn {
-    display: block; text-align: center; padding: 12px; cursor: pointer;
-    border: 1.5px dashed var(--tg-theme-hint-color, #bbb); border-radius: 10px; font-size: 14px;
+  .urgency button:active { transform: scale(.96); }
+  .urgency button.active[data-u="Low"]    { border-color: #34c759; background: rgba(52, 199, 89, .14); font-weight: 700; }
+  .urgency button.active[data-u="Medium"] { border-color: #ffcc00; background: rgba(255, 204, 0, .16); font-weight: 700; }
+  .urgency button.active[data-u="High"]   { border-color: #ff3b30; background: rgba(255, 59, 48, .12); font-weight: 700; }
+
+  .photo-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .photo-btn {
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+    padding: 12px 6px; cursor: pointer; font-size: 14px; font-family: inherit;
+    border-radius: 14px; border: 1.5px solid var(--tg-theme-hint-color, #d1d1d6);
+    background: var(--tg-theme-bg-color, #fff); color: var(--tg-theme-text-color, #1c1c1e);
+    transition: transform .1s, background .15s;
   }
-  .file-name { font-size: 12px; margin-top: 6px; color: var(--tg-theme-hint-color, #888); word-break: break-all; }
+  .photo-btn:active { transform: scale(.97); background: var(--tg-theme-secondary-bg-color, #f0f0f0); }
+  .photo-preview {
+    display: none; margin-top: 10px; align-items: center; gap: 10px;
+    background: var(--tg-theme-secondary-bg-color, #f7f7f8);
+    border-radius: 14px; padding: 8px;
+  }
+  .photo-preview img {
+    width: 64px; height: 64px; object-fit: cover; border-radius: 10px; flex-shrink: 0;
+  }
+  .photo-preview .meta { flex: 1; min-width: 0; }
+  .photo-preview .name {
+    font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .photo-preview .remove {
+    border: none; background: rgba(255, 59, 48, .14); color: #ff3b30;
+    font-size: 12.5px; font-weight: 700; font-family: inherit;
+    border-radius: 8px; padding: 6px 10px; cursor: pointer; margin-top: 4px;
+  }
+
   .btn-primary {
-    position: fixed; left: 14px; right: 14px; bottom: 14px; z-index: 10;
-    padding: 14px; border: none; border-radius: 12px;
+    position: fixed; left: 12px; right: 12px;
+    bottom: calc(14px + env(safe-area-inset-bottom, 0px)); z-index: 10;
+    padding: 15px; border: none; border-radius: 15px;
     font-size: 16px; font-weight: 700; font-family: inherit; cursor: pointer;
-    background: var(--tg-theme-button-color, #2481cc);
+    background: var(--tg-theme-button-color, #3390ec);
     color: var(--tg-theme-button-text-color, #fff);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .22);
+    transition: transform .1s, opacity .15s;
   }
-  .btn-primary:disabled { opacity: 0.6; }
+  .btn-primary:active { transform: scale(.98); }
+  .btn-primary:disabled { opacity: .55; }
+
   .ticket {
-    display: flex; justify-content: space-between; gap: 10px;
-    padding: 10px 0; font-size: 14px;
-    border-bottom: 1px solid var(--tg-theme-secondary-bg-color, #eee);
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;
+    padding: 11px 12px; font-size: 14px; margin-bottom: 8px;
+    background: var(--tg-theme-secondary-bg-color, #f7f7f8);
+    border-radius: 12px;
   }
-  .ticket:last-child { border-bottom: none; }
-  .ticket .badge { flex-shrink: 0; }
-  .empty { text-align: center; color: var(--tg-theme-hint-color, #888); padding: 14px 0; font-size: 13px; }
+  .ticket:last-child { margin-bottom: 0; }
+  .ticket .badge { flex-shrink: 0; font-size: 15px; }
+  .empty { text-align: center; color: var(--tg-theme-hint-color, #8e8e93); padding: 16px 0 8px; font-size: 13.5px; }
+  .empty .icon { font-size: 30px; display: block; margin-bottom: 6px; }
+
   #devBanner {
     display: none; background: #b45309; color: #fff; text-align: center;
-    padding: 6px; font-size: 12px; border-radius: 8px; margin-bottom: 12px;
+    padding: 7px; font-size: 12px; border-radius: 10px; margin-bottom: 12px;
   }
   #successView { text-align: center; display: none; }
-  #successView .big { font-size: 46px; padding: 14px 0 4px; }
+  #successView .big {
+    width: 74px; height: 74px; margin: 10px auto 14px; border-radius: 50%;
+    background: rgba(52, 199, 89, .16); color: #34c759;
+    font-size: 40px; line-height: 74px;
+  }
 </style>
 </head>
 <body>
@@ -77,7 +127,10 @@
       <div class="hint">IT Support Report — សូមពិពណ៌នាបញ្ហារបស់អ្នក</div>
 
       <label class="section">📝 បញ្ហាដែលជួប (Describe your issue) *</label>
-      <textarea id="issue" placeholder="ឧ. កុំព្យូទ័របើកមិនចេញ / Printer មិនធ្វើការ / Internet ដាច់..."></textarea>
+      <div class="textarea-wrap">
+        <textarea id="issue" maxlength="3000" placeholder="ឧ. កុំព្យូទ័របើកមិនចេញ / Printer មិនធ្វើការ / Internet ដាច់..."></textarea>
+        <span class="counter" id="counter">0/3000</span>
+      </div>
 
       <label class="section">⚡ កម្រិតបន្ទាន់ (Urgency)</label>
       <div class="urgency" id="urgency">
@@ -87,13 +140,23 @@
       </div>
 
       <label class="section">📸 រូបភាព Error (Optional photo)</label>
-      <label class="file-btn" for="photo">📷 ចុចដើម្បីជ្រើសរើសរូបភាព</label>
-      <input type="file" id="photo" accept="image/*" style="display:none">
-      <div class="file-name" id="fileName"></div>
+      <div class="photo-buttons">
+        <label class="photo-btn" for="cameraInput">📷 ថតរូប<span style="font-size:11px;opacity:.7">Camera</span></label>
+        <label class="photo-btn" for="galleryInput">🖼️ ជ្រើសរើស<span style="font-size:11px;opacity:.7">Gallery</span></label>
+      </div>
+      <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none">
+      <input type="file" id="galleryInput" accept="image/*" style="display:none">
+      <div class="photo-preview" id="photoPreview">
+        <img id="photoThumb" alt="photo">
+        <div class="meta">
+          <div class="name" id="photoName"></div>
+          <button class="remove" id="removePhoto" type="button">✕ លុបរូបភាព</button>
+        </div>
+      </div>
     </div>
 
     <div class="card">
-      <div style="font-weight:700; font-size:14px; margin-bottom:6px;">🗂️ សំបុត្ររបស់ខ្ញុំ (My recent tickets)</div>
+      <div style="font-weight:700; font-size:14px; margin-bottom:8px;">🗂️ សំបុត្ររបស់ខ្ញុំ (My recent tickets)</div>
       <div id="ticketList"><div class="empty">កំពុងផ្ទុក... (loading)</div></div>
     </div>
 
@@ -101,7 +164,7 @@
   </div>
 
   <div id="successView" class="card">
-    <div class="big">✅</div>
+    <div class="big">✓</div>
     <h1>ផ្ញើរួចរាល់!</h1>
     <div class="hint">ក្រុមការងារ IT បានទទួលរបាយការណ៍របស់អ្នករួចរាល់ និងសហការឱ្យឆាប់ៗ។<br>IT has received your ticket.</div>
     <br>
@@ -112,6 +175,7 @@
   const tg = window.Telegram ? window.Telegram.WebApp : null;
   const IN_TELEGRAM = !!(tg && tg.initData); // SDK loads everywhere, but initData only exists inside Telegram
   let urgency = 'Medium';
+  let activePhotoInput = null;
 
   if (tg) {
     tg.ready();
@@ -135,8 +199,36 @@
     });
   });
 
-  document.getElementById('photo').addEventListener('change', function (e) {
-    document.getElementById('fileName').textContent = e.target.files[0] ? e.target.files[0].name : '';
+  const cameraInput = document.getElementById('cameraInput');
+  const galleryInput = document.getElementById('galleryInput');
+  const photoPreview = document.getElementById('photoPreview');
+
+  function onPhotoSelected(fromInput) {
+    [cameraInput, galleryInput].forEach(function (i) { if (i !== fromInput) i.value = ''; });
+    const f = fromInput.files[0];
+    if (f) {
+      document.getElementById('photoThumb').src = URL.createObjectURL(f);
+      document.getElementById('photoName').textContent = f.name;
+      photoPreview.style.display = 'flex';
+      activePhotoInput = fromInput;
+    } else {
+      photoPreview.style.display = 'none';
+      activePhotoInput = null;
+    }
+  }
+  cameraInput.addEventListener('change', function () { onPhotoSelected(cameraInput); });
+  galleryInput.addEventListener('change', function () { onPhotoSelected(galleryInput); });
+
+  document.getElementById('removePhoto').addEventListener('click', function () {
+    cameraInput.value = '';
+    galleryInput.value = '';
+    photoPreview.style.display = 'none';
+    activePhotoInput = null;
+  });
+
+  const issueField = document.getElementById('issue');
+  issueField.addEventListener('input', function () {
+    document.getElementById('counter').textContent = issueField.value.length + '/3000';
   });
 
   function authHeaders() {
@@ -149,14 +241,14 @@
       const res = await fetch('/api/tickets', { headers: authHeaders() });
       const data = await res.json();
       if (!data.ok || !data.tickets.length) {
-        list.innerHTML = '<div class="empty">មិនមានសំបុត្រនៅឡើយទេ (no tickets yet)</div>';
+        list.innerHTML = '<div class="empty"><span class="icon">🗂️</span>មិនមានសំបុត្រនៅឡើយទេ<br>(no tickets yet)</div>';
         return;
       }
       list.innerHTML = data.tickets.map(function (t) {
         const preview = escapeHtml(t.issue.slice(0, 70)) + (t.issue.length > 70 ? '…' : '');
         return '<div class="ticket">' +
           '<div>📌 ' + preview + '<br><span class="hint">' + escapeHtml(t.timeText) + '</span></div>' +
-          '<div class="badge">' + t.urgencyEmoji + ' ✅</div>' +
+          '<div class="badge">' + t.urgencyEmoji + '</div>' +
           '</div>';
       }).join('');
     } catch (e) {
@@ -165,7 +257,7 @@
   }
 
   async function submitTicket() {
-    const issue = document.getElementById('issue').value.trim();
+    const issue = issueField.value.trim();
     if (!issue) {
       alert('សូមសរសេរបញ្ហាជាមុនសិន! (Please describe the issue first)');
       return;
@@ -179,8 +271,9 @@
       const fd = new FormData();
       fd.append('issue', issue);
       fd.append('urgency', urgency);
-      const photo = document.getElementById('photo').files[0];
-      if (photo) fd.append('photo', photo);
+      if (activePhotoInput && activePhotoInput.files[0]) {
+        fd.append('photo', activePhotoInput.files[0]);
+      }
 
       const res = await fetch('/api/tickets', { method: 'POST', headers: authHeaders(), body: fd });
       const data = await res.json();
@@ -189,9 +282,12 @@
       if (tg && tg.HapticFeedback) { try { tg.HapticFeedback.notificationOccurred('success'); } catch (e) { } }
       document.getElementById('formView').style.display = 'none';
       document.getElementById('successView').style.display = 'block';
-      document.getElementById('issue').value = '';
-      document.getElementById('photo').value = '';
-      document.getElementById('fileName').textContent = '';
+      issueField.value = '';
+      document.getElementById('counter').textContent = '0/3000';
+      cameraInput.value = '';
+      galleryInput.value = '';
+      photoPreview.style.display = 'none';
+      activePhotoInput = null;
     } catch (e) {
       alert('ផ្ញើមិនបានសម្រេច សូមព្យាយាមម្តងទៀត។ (Submission failed, please try again)');
       btn.disabled = false;
