@@ -221,8 +221,11 @@ app.post('/api/tickets', miniAppUpload.fields([
     }
   }
 
+  const ticketId = `MA-${Date.now().toString(36).toUpperCase()}`;
+
   let alertMessage = `🚨 <b>NEW IT SUPPORT TICKET (Mini App)</b>\n`;
   alertMessage += `━━━━━━━━━━━━━━━━━━━━━\n`;
+  alertMessage += `🎫 <b>Ticket ID:</b> <code>${ticketId}</code>\n`;
   alertMessage += `👤 <b>Reporter:</b> ${escapeHtml(fullName)} (${escapeHtml(username)})\n`;
   alertMessage += `🆔 <b>User ID:</b> <code>${userId}</code>\n`;
   alertMessage += `📱 <b>Source:</b> Telegram Mini App\n`;
@@ -243,8 +246,9 @@ app.post('/api/tickets', miniAppUpload.fields([
   }
   alertMessage += `━━━━━━━━━━━━━━━━━━━━━`;
 
+  let sentMessage = null;
   try {
-    await sendToITGroup(alertMessage, photoPaths);
+    sentMessage = await sendToITGroup(alertMessage, photoPaths, ticketActionKeyboard(ticketId, 'open'));
   } catch (err) {
     console.error('❌ Mini App ticket delivery failed:', err.message || err);
     photoPaths.forEach(p => fs.promises.unlink(p).catch(() => { }));
@@ -271,7 +275,9 @@ app.post('/api/tickets', miniAppUpload.fields([
 
   const tickets = loadTickets();
   const ticket = {
-    id: `MA-${Date.now().toString(36).toUpperCase()}`,
+    id: ticketId,
+    source: 'miniapp',
+    status: 'open',
     userId,
     fullName,
     username,
@@ -280,7 +286,14 @@ app.post('/api/tickets', miniAppUpload.fields([
     photos: photoPaths.length,
     voices: voicePaths.length,
     transcriptions,
-    createdAt: new Date().toISOString()
+    rawAlertText: alertMessage,
+    itMessageId: sentMessage ? sentMessage.message_id : null,
+    itChatId: sentMessage ? sentMessage.chat.id : null,
+    handledBy: null,
+    closedAt: null,
+    closedBy: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
   };
   tickets.push(ticket);
   saveTickets(tickets);
@@ -290,14 +303,16 @@ app.post('/api/tickets', miniAppUpload.fields([
 });
 
 app.get('/api/tickets', (req, res) => {
-  const tickets = loadTickets()
+  const userTickets = loadTickets()
     .filter(t => t.userId === req.tgUser.id)
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     .slice(0, 20)
     .map(t => ({
       id: t.id,
-      issue: t.issue,
-      urgency: t.urgency,
+      issue: t.issue || (t.transcriptions && t.transcriptions[0]) || 'IT Support Ticket',
+      urgency: t.urgency || 'Medium',
+      status: t.status || 'open',
+      handledBy: t.handledBy || null,
       photos: t.photos || 0,
       voices: t.voices || 0,
       urgencyEmoji: t.urgency === 'High' ? '🔴' : t.urgency === 'Medium' ? '🟡' : '🟢',
@@ -307,7 +322,7 @@ app.get('/api/tickets', (req, res) => {
         timeStyle: 'short'
       })
     }));
-  res.json({ ok: true, tickets });
+  res.json({ ok: true, tickets: userTickets });
 });
 
 const server = app.listen(PORT, () => {
@@ -389,8 +404,96 @@ function fileToGenerativePart(filePath, mimeType) {
   };
 }
 
-async function sendToITGroup(alertMessage, photos = []) {
-  if (!IT_GROUP_ID) return;
+async function setMessageReaction(chatId, messageId, emoji) {
+  if (!chatId || !messageId) return;
+  const reactionArray = emoji ? [{ type: 'emoji', emoji }] : [];
+  try {
+    if (typeof bot.telegram.setMessageReaction === 'function') {
+      await bot.telegram.setMessageReaction(chatId, messageId, reactionArray);
+    } else {
+      await bot.telegram.callApi('setMessageReaction', {
+        chat_id: chatId,
+        message_id: messageId,
+        reaction: reactionArray
+      });
+    }
+    console.log(`👍 Set reaction [${emoji || 'cleared'}] on msg ${messageId} in chat ${chatId}`);
+  } catch (err) {
+    console.warn(`⚠️ Could not set reaction [${emoji || 'cleared'}] on msg ${messageId}:`, err.message);
+  }
+}
+
+function ticketActionKeyboard(ticketId, status = 'open') {
+  if (status === 'resolved' || status === 'rejected') {
+    return {
+      inline_keyboard: [
+        [
+          { text: '🔄 Re-open Ticket', callback_data: `tk_act:${ticketId}:open` }
+        ]
+      ]
+    };
+  }
+
+  if (status === 'in_progress') {
+    return {
+      inline_keyboard: [
+        [
+          { text: '✅ Resolved', callback_data: `tk_act:${ticketId}:resolved` },
+          { text: '❌ Reject', callback_data: `tk_act:${ticketId}:rejected` }
+        ],
+        [
+          { text: '🔄 Re-open (Pending)', callback_data: `tk_act:${ticketId}:open` }
+        ]
+      ]
+    };
+  }
+
+  // default 'open'
+  return {
+    inline_keyboard: [
+      [
+        { text: '🔧 In Progress', callback_data: `tk_act:${ticketId}:in_progress` },
+        { text: '✅ Resolved', callback_data: `tk_act:${ticketId}:resolved` }
+      ],
+      [
+        { text: '❌ Reject', callback_data: `tk_act:${ticketId}:rejected` }
+      ]
+    ]
+  };
+}
+
+function formatTicketAlertWithStatus(rawAlertText, ticket) {
+  // Strip previous status block if present
+  let base = (rawAlertText || '').replace(/\n📊 <b>Status:<\/b>[\s\S]*$/, '').trimEnd();
+
+  const statusConfig = {
+    open: { emoji: '⏳', label: 'Open (Pending)' },
+    in_progress: { emoji: '🔧', label: 'In Progress' },
+    resolved: { emoji: '✅', label: 'Resolved' },
+    rejected: { emoji: '❌', label: 'Rejected' }
+  }[ticket.status] || { emoji: '⏳', label: 'Open' };
+
+  const updateTime = new Date(ticket.updatedAt || ticket.createdAt).toLocaleString('en-US', {
+    timeZone: 'Asia/Phnom_Penh',
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  });
+
+  let statusBlock = `\n📊 <b>Status:</b> ${statusConfig.emoji} <b>${statusConfig.label}</b>`;
+  if (ticket.handledBy) {
+    statusBlock += `\n👨‍💻 <b>IT Staff:</b> ${escapeHtml(ticket.handledBy)}`;
+  }
+  statusBlock += `\n⏰ <b>Updated:</b> ${updateTime} (GMT+7)`;
+
+  if (base.endsWith('━━━━━━━━━━━━━━━━━━━━━')) {
+    return base + statusBlock + `\n━━━━━━━━━━━━━━━━━━━━━`;
+  } else {
+    return base + `\n━━━━━━━━━━━━━━━━━━━━━` + statusBlock + `\n━━━━━━━━━━━━━━━━━━━━━`;
+  }
+}
+
+async function sendToITGroup(alertMessage, photos = [], replyMarkup = null) {
+  if (!IT_GROUP_ID) return null;
 
   async function executeSend(targetId) {
     if (photos.length > 0) {
@@ -412,21 +515,24 @@ async function sendToITGroup(alertMessage, photos = []) {
       }
     }
 
-    await bot.telegram.sendMessage(targetId, alertMessage, {
+    return await bot.telegram.sendMessage(targetId, alertMessage, {
       parse_mode: 'HTML',
-      disable_web_page_preview: true
+      disable_web_page_preview: true,
+      reply_markup: replyMarkup || undefined
     });
   }
 
   try {
-    await executeSend(IT_GROUP_ID);
+    const sent = await executeSend(IT_GROUP_ID);
     console.log(`🚀 Unified Ticket forwarded to IT Group (${IT_GROUP_ID})`);
+    return sent;
   } catch (sendErr) {
     if (sendErr.response?.parameters?.migrate_to_chat_id) {
       const newChatId = sendErr.response.parameters.migrate_to_chat_id;
       console.log(`🔄 Group upgraded to Supergroup! Retrying with new ID: ${newChatId}`);
-      await executeSend(newChatId);
+      const sent = await executeSend(newChatId);
       console.log(`🚀 Unified Ticket sent to new Supergroup ID (${newChatId})`);
+      return sent;
     } else {
       throw sendErr;
     }
@@ -756,6 +862,7 @@ async function processUnifiedTicket(sessionKey) {
     // 1. If user sent only casual greetings or non-problem messages -> Reply directly in group/chat and skip IT ticket
     if (parsed.is_problem === false) {
       console.log(`ℹ️ [${fullName}] sent a casual/non-problem message. Replying in source chat without creating IT ticket.`);
+      await setMessageReaction(chat.id, firstMessageId, null);
 
       const isKhmer = (parsed.language || '').toLowerCase().includes('khmer');
       const defaultReply = isKhmer
@@ -782,11 +889,13 @@ async function processUnifiedTicket(sessionKey) {
       timeStyle: 'medium'
     });
 
+    const ticketId = `TK-${Date.now().toString(36).toUpperCase()}`;
     const isKhmer = (parsed.language || '').toLowerCase().includes('khmer');
     const urgencyEmoji = parsed.urgency === 'High' ? '🔴' : parsed.urgency === 'Medium' ? '🟡' : '🟢';
 
     let alertMessage = `🚨 <b>NEW IT SUPPORT MASTER TICKET</b>\n`;
     alertMessage += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    alertMessage += `🎫 <b>Ticket ID:</b> <code>${ticketId}</code>\n`;
     alertMessage += `👤 <b>Reporter:</b> ${escapeHtml(fullName)} (${escapeHtml(username)})\n`;
     alertMessage += `🆔 <b>User ID:</b> <code>${userId}</code>\n`;
     alertMessage += `🏢 <b>Source:</b> ${escapeHtml(groupTitle)}\n`;
@@ -826,7 +935,47 @@ async function processUnifiedTicket(sessionKey) {
 
     alertMessage += `━━━━━━━━━━━━━━━━━━━━━`;
 
-    await sendToITGroup(alertMessage, photoPaths);
+    const sentMessage = await sendToITGroup(alertMessage, photoPaths, ticketActionKeyboard(ticketId, 'open'));
+
+    // Save ticket to tickets.json
+    const ticket = {
+      id: ticketId,
+      source: 'group',
+      status: 'open',
+      chatId: chat.id,
+      groupTitle,
+      firstMessageId,
+      lastMessageId: session.lastMessageId || firstMessageId,
+      messageLink,
+      userId,
+      fullName,
+      username,
+      issue: parsed.issue_summary || userTexts || 'Technical issue reported',
+      ocrText: parsed.ocr_text || null,
+      urgency: parsed.urgency || 'Medium',
+      photos: photoCount,
+      voices: voiceCount,
+      transcriptions: parsed.voice_transcriptions || [],
+      recommendedAction: parsed.recommended_action || null,
+      rawAlertText: alertMessage,
+      itMessageId: sentMessage ? sentMessage.message_id : null,
+      itChatId: sentMessage ? sentMessage.chat.id : null,
+      handledBy: null,
+      closedAt: null,
+      closedBy: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    const tickets = loadTickets();
+    tickets.push(ticket);
+    saveTickets(tickets);
+    console.log(`🚀 Master Ticket [${ticketId}] saved to database and sent to IT group`);
+
+    // Confirmation reaction ✅ on the user's report message in the group
+    await setMessageReaction(chat.id, firstMessageId, '✅');
+    if (session.lastMessageId && session.lastMessageId !== firstMessageId) {
+      await setMessageReaction(chat.id, session.lastMessageId, '✅');
+    }
 
   } catch (err) {
     console.error('❌ Error processing ticket:', err.message || err);
@@ -1059,6 +1208,114 @@ bot.command('app', async (ctx) => {
     await pinAppMessage(ctx, sent);
   } catch (e) {
     console.error('❌ /app reply failed:', e.message);
+  }
+});
+
+// ==========================================
+// 6.5 IT Ticket Action Callback Listener
+// ==========================================
+bot.action(/^tk_act:([^:]+):([^:]+)$/, async (ctx) => {
+  const ticketId = ctx.match[1];
+  const newStatus = ctx.match[2]; // 'open' | 'in_progress' | 'resolved' | 'rejected'
+
+  const tickets = loadTickets();
+  const ticketIndex = tickets.findIndex(t => t.id === ticketId);
+  if (ticketIndex === -1) {
+    return ctx.answerCbQuery('⚠️ Ticket not found.', { show_alert: true }).catch(() => {});
+  }
+
+  const ticket = tickets[ticketIndex];
+  if (ticket.status === newStatus) {
+    return ctx.answerCbQuery(`Ticket is already ${newStatus}`).catch(() => {});
+  }
+
+  const itUser = ctx.from;
+  const { fullName: itFullName, username: itUsername } = formatUserInfo(itUser);
+  const itStaffTag = itUsername !== 'No username' ? itUsername : itFullName;
+
+  const prevStatus = ticket.status;
+  ticket.status = newStatus;
+  ticket.updatedAt = new Date().toISOString();
+  ticket.handledBy = itStaffTag;
+  ticket.handledByName = itFullName;
+  if (newStatus === 'resolved' || newStatus === 'rejected') {
+    ticket.closedAt = new Date().toISOString();
+    ticket.closedBy = itStaffTag;
+  } else if (newStatus === 'open') {
+    ticket.closedAt = null;
+    ticket.closedBy = null;
+  }
+  tickets[ticketIndex] = ticket;
+  saveTickets(tickets);
+
+  const toastMap = {
+    in_progress: '🔧 Ticket marked as In Progress',
+    resolved: '✅ Ticket marked as Resolved!',
+    rejected: '❌ Ticket marked as Rejected',
+    open: '🔄 Ticket re-opened'
+  };
+  await ctx.answerCbQuery(toastMap[newStatus] || 'Status updated').catch(() => {});
+
+  const rawBase = ticket.rawAlertText || (ctx.callbackQuery.message?.text ? escapeHtml(ctx.callbackQuery.message.text) : '');
+  const updatedMessageText = formatTicketAlertWithStatus(rawBase, ticket);
+  const newKeyboard = ticketActionKeyboard(ticketId, newStatus);
+
+  try {
+    await ctx.editMessageText(updatedMessageText, {
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+      reply_markup: newKeyboard
+    });
+  } catch (editErr) {
+    try {
+      await ctx.editMessageReplyMarkup(newKeyboard);
+    } catch (kmErr) {
+      console.warn('Could not edit ticket reply markup:', kmErr.message);
+    }
+  }
+
+  console.log(`🎯 Ticket [${ticketId}] status changed: ${prevStatus} ➔ ${newStatus} by [${itStaffTag}]`);
+
+  // Notifications for Reporter:
+  // 1. If resolved or rejected on a group ticket, optionally post a neat closure note in the original chat
+  if (ticket.source === 'group' && ticket.chatId && ticket.firstMessageId) {
+    if (newStatus === 'resolved') {
+      const resolvedReply = `✅ <b>IT Support Update</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━\n` +
+        `បញ្ហារបស់ <b>${escapeHtml(ticket.fullName)}</b> ត្រូវបានដោះស្រាយរួចរាល់ហើយ ដោយក្រុមការងារ IT (${escapeHtml(itStaffTag)})! 🎉\n\n` +
+        `<i>Ticket #${ticket.id} marked as Resolved. Thank you!</i>`;
+      bot.telegram.sendMessage(ticket.chatId, resolvedReply, {
+        parse_mode: 'HTML',
+        reply_parameters: { message_id: ticket.firstMessageId }
+      }).catch(() => {});
+    } else if (newStatus === 'rejected') {
+      const rejectedReply = `ℹ️ <b>IT Support Notice</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━\n` +
+        `សំបុត្រ #${ticket.id} របស់ <b>${escapeHtml(ticket.fullName)}</b> ត្រូវបានបដិសេធ ឬមិនមែនជាបញ្ហា IT (${escapeHtml(itStaffTag)})។\n` +
+        `<i>Ticket #${ticket.id} closed. Contact IT if you need further assistance.</i>`;
+      bot.telegram.sendMessage(ticket.chatId, rejectedReply, {
+        parse_mode: 'HTML',
+        reply_parameters: { message_id: ticket.firstMessageId }
+      }).catch(() => {});
+    }
+  }
+
+  // 2. If it's a Mini App ticket, send a private notification message to user if available
+  if (ticket.source === 'miniapp' && ticket.userId) {
+    if (newStatus === 'resolved') {
+      const pmMsg = `✅ <b>IT Support Update</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━\n` +
+        `សំបុត្រជំនួយ <b>#${ticket.id}</b> របស់លោកអ្នក ត្រូវបានដោះស្រាយរួចរាល់ហើយ ដោយ IT (${escapeHtml(itStaffTag)})! 🎉\n\n` +
+        `📌 <b>Issue:</b> ${escapeHtml((ticket.issue || '').slice(0, 120))}\n` +
+        `<i>អ្នកអាចពិនិត្យមើលក្នុង Mini App គ្រប់ពេលវេលា។</i>`;
+      bot.telegram.sendMessage(ticket.userId, pmMsg, { parse_mode: 'HTML' }).catch(() => {});
+    } else if (newStatus === 'rejected') {
+      const pmMsg = `ℹ️ <b>IT Support Notice</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━\n` +
+        `សំបុត្រជំនួយ <b>#${ticket.id}</b> ត្រូវបានបដិសេធ ដោយ IT (${escapeHtml(itStaffTag)})។\n` +
+        `<i>ប្រសិនបើមានចម្ងល់ សូមទាក់ទងមកកាន់ IT Support ផ្ទាល់។</i>`;
+      bot.telegram.sendMessage(ticket.userId, pmMsg, { parse_mode: 'HTML' }).catch(() => {});
+    }
   }
 });
 
