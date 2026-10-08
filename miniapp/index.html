@@ -59,33 +59,23 @@
   .urgency button.active[data-u="Medium"] { border-color: #ffcc00; background: rgba(255, 204, 0, .16); font-weight: 700; }
   .urgency button.active[data-u="High"]   { border-color: #ff3b30; background: rgba(255, 59, 48, .12); font-weight: 700; }
 
-  .dept-grid {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 4px;
+  .dept-select-wrap { position: relative; margin-top: 4px; }
+  .dept-select-wrap svg.sel-arrow {
+    position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+    width: 16px; height: 16px; pointer-events: none;
+    color: var(--tg-theme-hint-color, #8e8e93);
   }
-  .dept-card {
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    padding: 10px 4px 8px; border-radius: 14px;
+  select#deptSelect {
+    width: 100%; padding: 13px 38px 13px 14px;
     border: 1.5px solid var(--tg-theme-hint-color, #d1d1d6);
-    background: var(--tg-theme-bg-color, #fff); color: var(--tg-theme-text-color, #1c1c1e);
-    cursor: pointer; text-align: center; font-family: inherit;
-    transition: transform .1s, background .15s, border-color .15s;
+    border-radius: 14px; font-size: 15px; font-family: inherit;
+    background: var(--tg-theme-secondary-bg-color, #f7f7f8);
+    color: var(--tg-theme-text-color, #1c1c1e);
+    appearance: none; -webkit-appearance: none;
+    cursor: pointer; transition: border-color .15s;
+    outline: none;
   }
-  .dept-card:active { transform: scale(.96); }
-  .dept-card.active {
-    border-color: var(--tg-theme-button-color, #3390ec);
-    background: rgba(51, 144, 236, .14);
-    color: var(--tg-theme-button-color, #3390ec);
-    font-weight: 700;
-  }
-  .dept-ico { width: 22px; height: 22px; margin-bottom: 4px; fill: currentColor; flex-shrink: 0; }
-  .dept-name {
-    font-size: 12px; line-height: 1.2; white-space: nowrap;
-    overflow: hidden; text-overflow: ellipsis; max-width: 100%;
-  }
-  .dept-sub {
-    font-size: 10px; color: var(--tg-theme-hint-color, #8e8e93); margin-top: 1px; white-space: nowrap;
-  }
-  .dept-card.active .dept-sub { color: var(--tg-theme-button-color, #3390ec); opacity: .9; }
+  select#deptSelect:focus { border-color: var(--tg-theme-button-color, #3390ec); }
 
   .photo-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .photo-btn {
@@ -335,52 +325,19 @@
       </div>
 
       <label class="section"><svg class="ico"><use href="#i-dept"/></svg>ផ្នែក / តួនាទី (Department / Role) *</label>
-      <div class="dept-grid" id="deptGrid">
-        <button type="button" class="dept-card active" data-dept="Sales">
-          <svg class="dept-ico"><use href="#i-dept-sales"/></svg>
-          <span class="dept-name">Sales</span>
-          <span class="dept-sub">ផ្នែកលក់</span>
-        </button>
-        <button type="button" class="dept-card" data-dept="Finance">
-          <svg class="dept-ico"><use href="#i-dept-finance"/></svg>
-          <span class="dept-name">Finance</span>
-          <span class="dept-sub">គណនេយ្យ</span>
-        </button>
-        <button type="button" class="dept-card" data-dept="HR & Admin">
-          <svg class="dept-ico"><use href="#i-dept-hr"/></svg>
-          <span class="dept-name">HR & Admin</span>
-          <span class="dept-sub">រដ្ឋបាល</span>
-        </button>
-        <button type="button" class="dept-card" data-dept="Operations">
-          <svg class="dept-ico"><use href="#i-dept-ops"/></svg>
-          <span class="dept-name">Operations</span>
-          <span class="dept-sub">ប្រតិបត្តិការ</span>
-        </button>
-        <button type="button" class="dept-card" data-dept="Warehouse">
-          <svg class="dept-ico"><use href="#i-dept-warehouse"/></svg>
-          <span class="dept-name">Warehouse</span>
-          <span class="dept-sub">ឃ្លាំង</span>
-        </button>
-        <button type="button" class="dept-card" data-dept="Marketing">
-          <svg class="dept-ico"><use href="#i-dept-marketing"/></svg>
-          <span class="dept-name">Marketing</span>
-          <span class="dept-sub">ទីផ្សារ</span>
-        </button>
-        <button type="button" class="dept-card" data-dept="Management">
-          <svg class="dept-ico"><use href="#i-dept-management"/></svg>
-          <span class="dept-name">Management</span>
-          <span class="dept-sub">ថ្នាក់ដឹកនាំ</span>
-        </button>
-        <button type="button" class="dept-card" data-dept="IT">
-          <svg class="dept-ico"><use href="#i-dept-it"/></svg>
-          <span class="dept-name">IT Dept</span>
-          <span class="dept-sub">បច្ចេកវិទ្យា</span>
-        </button>
-        <button type="button" class="dept-card" data-dept="General">
-          <svg class="dept-ico"><use href="#i-dept"/></svg>
-          <span class="dept-name">Other</span>
-          <span class="dept-sub">ផ្សេងៗ</span>
-        </button>
+      <div class="dept-select-wrap">
+        <select id="deptSelect" onchange="document.getElementById('department').value=this.value">
+          <option value="Sales">📊 Sales — ផ្នែកលក់</option>
+          <option value="Finance">💰 Finance — គណនេយ្យ</option>
+          <option value="HR & Admin">👥 HR &amp; Admin — រដ្ឋបាល</option>
+          <option value="Operations">⚙️ Operations — ប្រតិបត្តិការ</option>
+          <option value="Warehouse">🏭 Warehouse — ឃ្លាំង</option>
+          <option value="Marketing">📣 Marketing — ទីផ្សារ</option>
+          <option value="Management">🏢 Management — ថ្នាក់ដឹកនាំ</option>
+          <option value="IT">💻 IT Dept — បច្ចេកវិទ្យា</option>
+          <option value="General">🔹 Other — ផ្សេងៗ</option>
+        </select>
+        <svg class="sel-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
       <input type="hidden" id="department" value="Sales">
 
