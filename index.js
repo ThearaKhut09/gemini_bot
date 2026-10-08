@@ -222,12 +222,14 @@ app.post('/api/tickets', miniAppUpload.fields([
   }
 
   const ticketId = `MA-${Date.now().toString(36).toUpperCase()}`;
+  const department = (req.body.department || '').trim() || 'General';
 
   let alertMessage = `🚨 <b>NEW IT SUPPORT TICKET (Mini App)</b>\n`;
   alertMessage += `━━━━━━━━━━━━━━━━━━━━━\n`;
   alertMessage += `🎫 <b>Ticket ID:</b> <code>${ticketId}</code>\n`;
   alertMessage += `👤 <b>Reporter:</b> ${escapeHtml(fullName)} (${escapeHtml(username)})\n`;
   alertMessage += `🆔 <b>User ID:</b> <code>${userId}</code>\n`;
+  alertMessage += `🏢 <b>Department:</b> <b>${escapeHtml(department)}</b>\n`;
   alertMessage += `📱 <b>Source:</b> Telegram Mini App\n`;
   alertMessage += `${urgencyInput === 'High' ? '🔴' : urgencyInput === 'Medium' ? '🟡' : '🟢'} <b>Urgency:</b> <b>${urgencyInput}</b>\n`;
   alertMessage += `📅 <b>Time:</b> ${timestamp} (GMT+7)\n`;
@@ -278,6 +280,7 @@ app.post('/api/tickets', miniAppUpload.fields([
     id: ticketId,
     source: 'miniapp',
     status: 'open',
+    department,
     userId,
     fullName,
     username,
@@ -298,7 +301,7 @@ app.post('/api/tickets', miniAppUpload.fields([
   tickets.push(ticket);
   saveTickets(tickets);
 
-  console.log(`🚀 Mini App ticket ${ticket.id} from [${fullName}] forwarded to IT Group`);
+  console.log(`🚀 Mini App ticket ${ticket.id} (${department}) from [${fullName}] forwarded to IT Group`);
   res.json({ ok: true, id: ticket.id });
 });
 
@@ -311,6 +314,7 @@ app.get('/api/tickets', (req, res) => {
       id: t.id,
       issue: t.issue || (t.transcriptions && t.transcriptions[0]) || 'IT Support Ticket',
       urgency: t.urgency || 'Medium',
+      department: t.department || 'General',
       status: t.status || 'open',
       handledBy: t.handledBy || null,
       photos: t.photos || 0,
@@ -893,11 +897,23 @@ async function processUnifiedTicket(sessionKey) {
     const isKhmer = (parsed.language || '').toLowerCase().includes('khmer');
     const urgencyEmoji = parsed.urgency === 'High' ? '🔴' : parsed.urgency === 'Medium' ? '🟡' : '🟢';
 
+    // Auto-detect department from group title and user text
+    let department = 'General';
+    const combinedText = `${groupTitle} ${userTexts}`.toLowerCase();
+    if (/sale|លក់/.test(combinedText)) department = 'Sales';
+    else if (/finance|account|គណនេយ្យ|លុយ|bill|invoice/.test(combinedText)) department = 'Finance';
+    else if (/hr|human|admin|រដ្ឋបាល|បុគ្គលិក/.test(combinedText)) department = 'HR & Admin';
+    else if (/operation|ប្រតិបត្តិការ/.test(combinedText)) department = 'Operations';
+    else if (/warehouse|stock|logistics|ឃ្លាំង|ដឹក/.test(combinedText)) department = 'Warehouse & Logistics';
+    else if (/marketing|ទីផ្សារ/.test(combinedText)) department = 'Marketing';
+    else if (/manage|boss|director|ថ្នាក់ដឹកនាំ/.test(combinedText)) department = 'Management';
+
     let alertMessage = `🚨 <b>NEW IT SUPPORT MASTER TICKET</b>\n`;
     alertMessage += `━━━━━━━━━━━━━━━━━━━━━\n`;
     alertMessage += `🎫 <b>Ticket ID:</b> <code>${ticketId}</code>\n`;
     alertMessage += `👤 <b>Reporter:</b> ${escapeHtml(fullName)} (${escapeHtml(username)})\n`;
     alertMessage += `🆔 <b>User ID:</b> <code>${userId}</code>\n`;
+    alertMessage += `🏢 <b>Department:</b> <b>${escapeHtml(department)}</b>\n`;
     alertMessage += `🏢 <b>Source:</b> ${escapeHtml(groupTitle)}\n`;
     alertMessage += `📦 <b>Bundle:</b> ${voiceCount} 🎙️ (${formatDuration(totalDuration)}) | ${photoCount} 📸 | ${textCount} 💬\n`;
     alertMessage += `${urgencyEmoji} <b>Urgency:</b> <b>${escapeHtml(parsed.urgency || 'Normal')}</b>\n`;
@@ -942,6 +958,7 @@ async function processUnifiedTicket(sessionKey) {
       id: ticketId,
       source: 'group',
       status: 'open',
+      department,
       chatId: chat.id,
       groupTitle,
       firstMessageId,
@@ -1187,6 +1204,112 @@ bot.command('getid', (ctx) => {
   ctx.reply(`ℹ️ <b>Chat Details:</b>\n• <b>Title:</b> ${escapeHtml(chatTitle)}\n• <b>Type:</b> ${chatType}\n• <b>Chat ID:</b> <code>${chatId}</code>\n\n<i>Copy this Chat ID into your .env for IT_GROUP_ID</i>`, {
     parse_mode: 'HTML'
   });
+});
+
+function escapeCsv(val) {
+  if (val === null || val === undefined) return '""';
+  const str = String(val).replace(/"/g, '""');
+  return `"${str}"`;
+}
+
+bot.command('export', async (ctx) => {
+  const isItChat = IT_GROUP_ID && ctx.chat.id.toString() === IT_GROUP_ID.toString();
+  if (!isItChat && ctx.chat.type !== 'private') {
+    return ctx.reply('⚠️ បញ្ជានេះសម្រាប់តែក្រុមការងារ IT Support ប៉ុណ្ណោះ។ (This command is restricted to the IT Support team.)', { parse_mode: 'HTML' }).catch(() => {});
+  }
+
+  const tickets = loadTickets();
+  if (!tickets || tickets.length === 0) {
+    return ctx.reply('ℹ️ មិនទាន់មានសំបុត្រ IT នៅក្នុងប្រព័ន្ធនៅឡើយទេ។ (No tickets recorded yet.)', { parse_mode: 'HTML' }).catch(() => {});
+  }
+
+  const total = tickets.length;
+  const openCount = tickets.filter(t => (t.status || 'open') === 'open').length;
+  const inProgressCount = tickets.filter(t => t.status === 'in_progress').length;
+  const resolvedCount = tickets.filter(t => t.status === 'resolved').length;
+  const rejectedCount = tickets.filter(t => t.status === 'rejected').length;
+
+  const headers = [
+    'Ticket ID',
+    'Created Date (GMT+7)',
+    'Status',
+    'Department',
+    'Urgency',
+    'Reporter Name',
+    'Username',
+    'User ID',
+    'Source Channel',
+    'Handled By',
+    'Updated Date (GMT+7)',
+    'Closed Date (GMT+7)',
+    'Issue Summary',
+    'Voice Transcriptions',
+    'Screen OCR Text',
+    'Suggested Action',
+    'Original Message Link'
+  ];
+
+  const rows = tickets.map(t => {
+    const createdText = t.createdAt
+      ? new Date(t.createdAt).toLocaleString('en-US', { timeZone: 'Asia/Phnom_Penh' })
+      : '';
+    const updatedText = t.updatedAt
+      ? new Date(t.updatedAt).toLocaleString('en-US', { timeZone: 'Asia/Phnom_Penh' })
+      : '';
+    const closedText = t.closedAt
+      ? new Date(t.closedAt).toLocaleString('en-US', { timeZone: 'Asia/Phnom_Penh' })
+      : '';
+    const transcriptText = Array.isArray(t.transcriptions) ? t.transcriptions.join(' | ') : '';
+
+    return [
+      escapeCsv(t.id),
+      escapeCsv(createdText),
+      escapeCsv(t.status || 'open'),
+      escapeCsv(t.department || 'General'),
+      escapeCsv(t.urgency || 'Normal'),
+      escapeCsv(t.fullName || ''),
+      escapeCsv(t.username || ''),
+      escapeCsv(t.userId || ''),
+      escapeCsv(t.groupTitle || (t.source === 'miniapp' ? 'Telegram Mini App' : 'Group Chat')),
+      escapeCsv(t.handledBy || ''),
+      escapeCsv(updatedText),
+      escapeCsv(closedText),
+      escapeCsv(t.issue || ''),
+      escapeCsv(transcriptText),
+      escapeCsv(t.ocrText || ''),
+      escapeCsv(t.recommendedAction || ''),
+      escapeCsv(t.messageLink || '')
+    ].join(',');
+  });
+
+  const BOM = '\uFEFF';
+  const csvData = BOM + [headers.join(','), ...rows].join('\r\n');
+
+  const nowStr = new Date().toISOString().slice(0, 10);
+  const fileName = `IT_Tickets_Report_${nowStr}.csv`;
+  const tempPath = path.join(os.tmpdir(), fileName);
+
+  try {
+    fs.writeFileSync(tempPath, csvData, 'utf8');
+
+    const caption = `📊 <b>IT SUPPORT TICKETS EXPORT</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━\n` +
+      `📦 <b>Total Tickets:</b> <code>${total}</code>\n` +
+      `⏳ <b>Open:</b> <code>${openCount}</code> | 🔧 <b>In Progress:</b> <code>${inProgressCount}</code>\n` +
+      `✅ <b>Resolved:</b> <code>${resolvedCount}</code> | ❌ <b>Rejected:</b> <code>${rejectedCount}</code>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━\n` +
+      `📥 <i>Excel-Ready (UTF-8 with Khmer Unicode Support)</i>`;
+
+    await ctx.replyWithDocument(
+      { source: tempPath, filename: fileName },
+      { caption, parse_mode: 'HTML' }
+    );
+  } catch (err) {
+    console.error('❌ /export failed:', err);
+    ctx.reply(`❌ Could not generate export: ${escapeHtml(err.message)}`, { parse_mode: 'HTML' }).catch(() => {});
+  } finally {
+    fs.promises.unlink(tempPath).catch(() => {});
+  }
 });
 
 bot.command('app', async (ctx) => {

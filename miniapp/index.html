@@ -59,6 +59,18 @@
   .urgency button.active[data-u="Medium"] { border-color: #ffcc00; background: rgba(255, 204, 0, .16); font-weight: 700; }
   .urgency button.active[data-u="High"]   { border-color: #ff3b30; background: rgba(255, 59, 48, .12); font-weight: 700; }
 
+  .dept-select {
+    width: 100%; padding: 12px 14px; border-radius: 14px;
+    border: 1.5px solid var(--tg-theme-hint-color, #d1d1d6);
+    background: var(--tg-theme-bg-color, #fff); color: var(--tg-theme-text-color, #1c1c1e);
+    font-size: 14.5px; font-family: inherit; cursor: pointer;
+    appearance: none; -webkit-appearance: none;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%228%22%20viewBox%3D%220%200%2012%208%22%3E%3Cpath%20fill%3D%22%238e8e93%22%20d%3D%22M1.41%200L6%204.58%2010.59%200%2012%201.41l-6%206-6-6z%22%2F%3E%3C%2Fsvg%3E");
+    background-repeat: no-repeat; background-position: right 14px center;
+    transition: border-color .15s;
+  }
+  .dept-select:focus { outline: none; border-color: var(--tg-theme-button-color, #3390ec); }
+
   .photo-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .photo-btn {
     display: flex; align-items: center; justify-content: center; gap: 7px;
@@ -298,6 +310,20 @@
         <button type="button" data-u="Medium" class="active">🟡 មធ្យម</button>
         <button type="button" data-u="High">🔴 បន្ទាន់</button>
       </div>
+
+      <label class="section">🏢 ផ្នែក / តួនាទី (Department / Role) *</label>
+      <select id="department" class="dept-select">
+        <option value="" disabled selected>-- សូមជ្រើសរើសផ្នែក (Select Department) --</option>
+        <option value="Sales">📈 Sales / ផ្នែកលក់</option>
+        <option value="Finance">💰 Finance & Accounting / គណនេយ្យ</option>
+        <option value="HR & Admin">👥 HR & Admin / រដ្ឋបាល</option>
+        <option value="Operations">⚙️ Operations / ប្រតិបត្តិការ</option>
+        <option value="Warehouse & Logistics">📦 Warehouse / ឃ្លាំង & ដឹកជញ្ជូន</option>
+        <option value="Marketing">📢 Marketing / ទីផ្សារ</option>
+        <option value="Management">👔 Management / ថ្នាក់គ្រប់គ្រង</option>
+        <option value="IT">💻 IT Department</option>
+        <option value="General">📌 ផ្សេងៗ (Other / General)</option>
+      </select>
 
       <label class="section"><svg class="ico"><use href="#i-voice"/></svg>សំឡេងពណ៌នា <span class="hint" style="font-weight:400">(និយាយខ្មែរ ឬអង់គ្លេស — max 3)</span></label>
       <button type="button" class="photo-btn" id="recordBtn" style="width:100%"><svg class="ico"><use href="#i-mic"/></svg>ថតសំឡេង<span style="font-size:11px;opacity:.7">Record</span></button>
@@ -680,11 +706,13 @@
         };
         const st = statusMap[t.status] || statusMap.open;
         const itStaffNotice = t.handledBy ? '<span class="hint" style="font-size:11.5px; margin-left: 4px;">• ' + escapeHtml(t.handledBy) + '</span>' : '';
+        const deptTag = t.department ? '<span class="hint" style="font-size:11.5px; margin-left: 2px;">• 🏢 ' + escapeHtml(t.department) + '</span>' : '';
         return '<div class="ticket">' +
           '<div style="flex: 1; min-width: 0;">' +
             '<div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap; margin-bottom: 4px;">' +
               '<span class="status-pill ' + st.cls + '">' + st.label + '</span>' +
               '<span class="hint" style="font-size:11.5px; font-weight:600;">#' + escapeHtml(t.id) + '</span>' +
+              deptTag +
               itStaffNotice +
             '</div>' +
             '<div style="margin: 2px 0 3px; word-break: break-word;">📌 ' + preview + '</div>' +
@@ -705,6 +733,13 @@
       return;
     }
 
+    const dept = (document.getElementById('department').value || '').trim();
+    if (!dept) {
+      alert('សូមជ្រើសរើសផ្នែក / តួនាទីរបស់អ្នក! (Please select your Department / Role)');
+      document.getElementById('department').focus();
+      return;
+    }
+
     const btn = document.getElementById('submitBtn');
     btn.disabled = true;
     btn.textContent = '⏳ កំពុងផ្ញើ...';
@@ -713,6 +748,7 @@
       const fd = new FormData();
       fd.append('issue', issue);
       fd.append('urgency', urgency);
+      fd.append('department', dept);
       photoFiles.forEach(function (p) { fd.append('photos', p.file); });
       voiceClips.forEach(function (v) { fd.append('voices', v.file); });
 
@@ -725,6 +761,7 @@
       document.getElementById('successView').style.display = 'block';
       issueField.value = '';
       document.getElementById('counter').textContent = '0/3000';
+      document.getElementById('department').selectedIndex = 0;
       galleryInput.value = '';
       photoFiles.forEach(function (p) { URL.revokeObjectURL(p.url); });
       photoFiles = [];
@@ -744,6 +781,7 @@
   function resetForm() {
     document.getElementById('successView').style.display = 'none';
     document.getElementById('formView').style.display = 'block';
+    document.getElementById('department').selectedIndex = 0;
     const btn = document.getElementById('submitBtn');
     btn.disabled = false;
     btn.innerHTML = SUBMIT_HTML;
