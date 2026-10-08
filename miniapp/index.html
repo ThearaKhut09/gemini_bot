@@ -59,23 +59,54 @@
   .urgency button.active[data-u="Medium"] { border-color: #ffcc00; background: rgba(255, 204, 0, .16); font-weight: 700; }
   .urgency button.active[data-u="High"]   { border-color: #ff3b30; background: rgba(255, 59, 48, .12); font-weight: 700; }
 
-  .dept-select-wrap { position: relative; margin-top: 4px; }
-  .dept-select-wrap svg.sel-arrow {
-    position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
-    width: 16px; height: 16px; pointer-events: none;
-    color: var(--tg-theme-hint-color, #8e8e93);
-  }
-  select#deptSelect {
-    width: 100%; padding: 13px 38px 13px 14px;
+  /* ── Custom Department Dropdown ── */
+  .cdrop { position: relative; margin-top: 4px; }
+  .cdrop-trigger {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%; padding: 12px 14px;
     border: 1.5px solid var(--tg-theme-hint-color, #d1d1d6);
     border-radius: 14px; font-size: 15px; font-family: inherit;
     background: var(--tg-theme-secondary-bg-color, #f7f7f8);
     color: var(--tg-theme-text-color, #1c1c1e);
-    appearance: none; -webkit-appearance: none;
-    cursor: pointer; transition: border-color .15s;
-    outline: none;
+    cursor: pointer; text-align: left;
+    transition: border-color .15s; outline: none;
   }
-  select#deptSelect:focus { border-color: var(--tg-theme-button-color, #3390ec); }
+  .cdrop-trigger.open { border-color: var(--tg-theme-button-color, #3390ec); }
+  .cdrop-trigger .cdrop-ico { width: 20px; height: 20px; flex-shrink: 0; fill: currentColor; }
+  .cdrop-trigger .cdrop-label { flex: 1; }
+  .cdrop-trigger .cdrop-label strong { display: block; font-size: 14px; }
+  .cdrop-trigger .cdrop-label small { font-size: 11px; color: var(--tg-theme-hint-color,#8e8e93); }
+  .cdrop-arrow {
+    width: 16px; height: 16px; flex-shrink: 0;
+    color: var(--tg-theme-hint-color, #8e8e93);
+    transition: transform .2s;
+  }
+  .cdrop-trigger.open .cdrop-arrow { transform: rotate(180deg); }
+  .cdrop-trigger.is-placeholder .cdrop-ico { opacity: .5; }
+  .cdrop-trigger.is-placeholder .cdrop-label strong { color: var(--tg-theme-hint-color, #8e8e93); font-weight: 500; }
+  .cdrop-trigger.is-placeholder .cdrop-label small { color: var(--tg-theme-hint-color, #8e8e93); opacity: .75; }
+  .cdrop-panel {
+    display: none; position: absolute; left: 0; right: 0; top: calc(100% + 6px);
+    background: var(--tg-theme-bg-color, #fff);
+    border: 1.5px solid var(--tg-theme-hint-color, #d1d1d6);
+    border-radius: 14px; overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0,0,0,.18);
+    z-index: 50; max-height: 300px; overflow-y: auto;
+  }
+  .cdrop-panel.open { display: block; }
+  .cdrop-option {
+    display: flex; align-items: center; gap: 10px;
+    padding: 11px 14px; cursor: pointer; font-family: inherit;
+    font-size: 14px; color: var(--tg-theme-text-color, #1c1c1e);
+    border: none; background: none; width: 100%; text-align: left;
+    transition: background .12s;
+  }
+  .cdrop-option:active, .cdrop-option:hover { background: var(--tg-theme-secondary-bg-color, #f0f2f5); }
+  .cdrop-option.selected { color: var(--tg-theme-button-color, #3390ec); font-weight: 700; }
+  .cdrop-option .copt-ico { width: 20px; height: 20px; flex-shrink: 0; fill: currentColor; }
+  .cdrop-option .copt-txt strong { display: block; font-size: 14px; }
+  .cdrop-option .copt-txt small { font-size: 11px; color: var(--tg-theme-hint-color, #8e8e93); }
+  .cdrop-option.selected .copt-txt small { color: var(--tg-theme-button-color, #3390ec); opacity:.85; }
 
   .photo-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .photo-btn {
@@ -325,21 +356,28 @@
       </div>
 
       <label class="section"><svg class="ico"><use href="#i-dept"/></svg>ផ្នែក / តួនាទី (Department / Role) *</label>
-      <div class="dept-select-wrap">
-        <select id="deptSelect" onchange="document.getElementById('department').value=this.value">
-          <option value="Sales">📊 Sales — ផ្នែកលក់</option>
-          <option value="Finance">💰 Finance — គណនេយ្យ</option>
-          <option value="HR & Admin">👥 HR &amp; Admin — រដ្ឋបាល</option>
-          <option value="Operations">⚙️ Operations — ប្រតិបត្តិការ</option>
-          <option value="Warehouse">🏭 Warehouse — ឃ្លាំង</option>
-          <option value="Marketing">📣 Marketing — ទីផ្សារ</option>
-          <option value="Management">🏢 Management — ថ្នាក់ដឹកនាំ</option>
-          <option value="IT">💻 IT Dept — បច្ចេកវិទ្យា</option>
-          <option value="General">🔹 Other — ផ្សេងៗ</option>
-        </select>
-        <svg class="sel-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      <div class="cdrop" id="cdropWrap">
+        <button type="button" class="cdrop-trigger is-placeholder" id="cdropTrigger" onclick="cdropToggle()">
+          <svg class="cdrop-ico" id="cdropIco"><use href="#i-dept"/></svg>
+          <span class="cdrop-label">
+            <strong id="cdropName">Please select / សូមជ្រើសរើស</strong>
+            <small id="cdropSub">ជ្រើសរើសផ្នែក ឬតួនាទី</small>
+          </span>
+          <svg class="cdrop-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="cdrop-panel" id="cdropPanel">
+          <button type="button" class="cdrop-option" data-val="Sales" data-ico="#i-dept-sales" data-name="Sales" data-sub="ផ្នែកលក់" onclick="cdropSelect(this)"><svg class="copt-ico"><use href="#i-dept-sales"/></svg><span class="copt-txt"><strong>Sales</strong><small>ផ្នែកលក់</small></span></button>
+          <button type="button" class="cdrop-option" data-val="Finance" data-ico="#i-dept-finance" data-name="Finance" data-sub="គណនេយ្យ" onclick="cdropSelect(this)"><svg class="copt-ico"><use href="#i-dept-finance"/></svg><span class="copt-txt"><strong>Finance</strong><small>គណនេយ្យ</small></span></button>
+          <button type="button" class="cdrop-option" data-val="HR &amp; Admin" data-ico="#i-dept-hr" data-name="HR &amp; Admin" data-sub="រដ្ឋបាល" onclick="cdropSelect(this)"><svg class="copt-ico"><use href="#i-dept-hr"/></svg><span class="copt-txt"><strong>HR &amp; Admin</strong><small>រដ្ឋបាល</small></span></button>
+          <button type="button" class="cdrop-option" data-val="Operations" data-ico="#i-dept-ops" data-name="Operations" data-sub="ប្រតិបត្តិការ" onclick="cdropSelect(this)"><svg class="copt-ico"><use href="#i-dept-ops"/></svg><span class="copt-txt"><strong>Operations</strong><small>ប្រតិបត្តិការ</small></span></button>
+          <button type="button" class="cdrop-option" data-val="Warehouse" data-ico="#i-dept-warehouse" data-name="Warehouse" data-sub="ឃ្លាំង" onclick="cdropSelect(this)"><svg class="copt-ico"><use href="#i-dept-warehouse"/></svg><span class="copt-txt"><strong>Warehouse</strong><small>ឃ្លាំង</small></span></button>
+          <button type="button" class="cdrop-option" data-val="Marketing" data-ico="#i-dept-marketing" data-name="Marketing" data-sub="ទីផ្សារ" onclick="cdropSelect(this)"><svg class="copt-ico"><use href="#i-dept-marketing"/></svg><span class="copt-txt"><strong>Marketing</strong><small>ទីផ្សារ</small></span></button>
+          <button type="button" class="cdrop-option" data-val="Management" data-ico="#i-dept-management" data-name="Management" data-sub="ថ្នាក់ដឹកនាំ" onclick="cdropSelect(this)"><svg class="copt-ico"><use href="#i-dept-management"/></svg><span class="copt-txt"><strong>Management</strong><small>ថ្នាក់ដឹកនាំ</small></span></button>
+          <button type="button" class="cdrop-option" data-val="IT" data-ico="#i-dept-it" data-name="IT Dept" data-sub="បច្ចេកវិទ្យា" onclick="cdropSelect(this)"><svg class="copt-ico"><use href="#i-dept-it"/></svg><span class="copt-txt"><strong>IT Dept</strong><small>បច្ចេកវិទ្យា</small></span></button>
+          <button type="button" class="cdrop-option" data-val="General" data-ico="#i-dept" data-name="Other" data-sub="ផ្សេងៗ" onclick="cdropSelect(this)"><svg class="copt-ico"><use href="#i-dept"/></svg><span class="copt-txt"><strong>Other</strong><small>ផ្សេងៗ</small></span></button>
+        </div>
       </div>
-      <input type="hidden" id="department" value="Sales">
+      <input type="hidden" id="department" value="">
 
       <label class="section"><svg class="ico"><use href="#i-voice"/></svg>សំឡេងពណ៌នា <span class="hint" style="font-weight:400">(និយាយខ្មែរ ឬអង់គ្លេស — max 3)</span></label>
       <button type="button" class="photo-btn" id="recordBtn" style="width:100%"><svg class="ico"><use href="#i-mic"/></svg>ថតសំឡេង<span style="font-size:11px;opacity:.7">Record</span></button>
@@ -396,6 +434,49 @@
   const SUBMIT_HTML = '<svg class="ico"><use href="#i-upload"/></svg>ផ្ញើរបាយការណ៍ (Submit)';
   const REC_HTML = '<svg class="ico"><use href="#i-mic"/></svg>ថតសំឡេង<span style="font-size:11px;opacity:.7">Record</span>';
   const STOP_HTML = '<svg class="ico"><use href="#i-stop"/></svg>បញ្ឈប់ថត (Stop)';
+
+  /* ── Custom Department Dropdown ── */
+  function cdropToggle() {
+    var trigger = document.getElementById('cdropTrigger');
+    var panel   = document.getElementById('cdropPanel');
+    var open = panel.classList.toggle('open');
+    trigger.classList.toggle('open', open);
+  }
+  function cdropSelect(btn) {
+    var val  = btn.dataset.val;
+    var ico  = btn.dataset.ico;
+    var name = btn.dataset.name;
+    var sub  = btn.dataset.sub;
+    // Update trigger display
+    document.getElementById('cdropIco').querySelector('use').setAttribute('href', ico);
+    document.getElementById('cdropName').textContent = name;
+    document.getElementById('cdropSub').textContent  = sub;
+    document.getElementById('cdropTrigger').classList.remove('is-placeholder');
+    // Update hidden input
+    document.getElementById('department').value = val;
+    // Mark selected option
+    document.querySelectorAll('.cdrop-option').forEach(function(o){ o.classList.remove('selected'); });
+    btn.classList.add('selected');
+    // Close panel
+    cdropClose();
+  }
+  function cdropClose() {
+    document.getElementById('cdropPanel').classList.remove('open');
+    document.getElementById('cdropTrigger').classList.remove('open');
+  }
+  function cdropReset() {
+    document.getElementById('department').value = '';
+    document.getElementById('cdropIco').querySelector('use').setAttribute('href', '#i-dept');
+    document.getElementById('cdropName').textContent = 'Please select / សូមជ្រើសរើស';
+    document.getElementById('cdropSub').textContent  = 'ជ្រើសរើសផ្នែក ឬតួនាទី';
+    document.getElementById('cdropTrigger').classList.add('is-placeholder');
+    document.querySelectorAll('.cdrop-option').forEach(function(o){ o.classList.remove('selected'); });
+    cdropClose();
+  }
+  document.addEventListener('click', function(e) {
+    var wrap = document.getElementById('cdropWrap');
+    if (wrap && !wrap.contains(e.target)) cdropClose();
+  });
 
   if (tg) {
     tg.ready();
@@ -752,7 +833,12 @@
     const dept = (document.getElementById('department').value || '').trim();
     if (!dept) {
       alert('សូមជ្រើសរើសផ្នែក / តួនាទីរបស់អ្នក! (Please select your Department / Role)');
-      document.getElementById('department').focus();
+      const trig = document.getElementById('cdropTrigger');
+      if (trig) {
+        trig.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        var panel = document.getElementById('cdropPanel');
+        if (panel && !panel.classList.contains('open')) cdropToggle();
+      }
       return;
     }
 
@@ -777,7 +863,7 @@
       document.getElementById('successView').style.display = 'block';
       issueField.value = '';
       document.getElementById('counter').textContent = '0/3000';
-      document.getElementById('department').selectedIndex = 0;
+      cdropReset();
       galleryInput.value = '';
       photoFiles.forEach(function (p) { URL.revokeObjectURL(p.url); });
       photoFiles = [];
@@ -797,7 +883,7 @@
   function resetForm() {
     document.getElementById('successView').style.display = 'none';
     document.getElementById('formView').style.display = 'block';
-    document.getElementById('department').selectedIndex = 0;
+    cdropReset();
     const btn = document.getElementById('submitBtn');
     btn.disabled = false;
     btn.innerHTML = SUBMIT_HTML;
