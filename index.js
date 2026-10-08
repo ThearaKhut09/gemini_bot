@@ -1593,7 +1593,7 @@ bot.catch((err, ctx) => {
   console.error(`❌ Telegraf uncaught error:`, err);
 });
 
-bot.launch()
+bot.launch({ dropPendingUpdates: true })
   .then(() => console.log(`🤖 Telegram IT Support Bot is running in [${AI_PROVIDER.toUpperCase()}] mode!`))
   .catch((err) => {
     console.error('❌ Failed to start bot:', err);
